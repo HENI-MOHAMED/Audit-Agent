@@ -1,0 +1,12 @@
+.env
+token.json
+credentials.json
+__pycache__/
+chroma_db*/
+email_attachments/
+Google_Drive_Retrete/
+*.pyc
+.venv
+data
+archive/PDF_lib
+node_modules

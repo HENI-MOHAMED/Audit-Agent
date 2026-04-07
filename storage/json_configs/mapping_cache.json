@@ -1,0 +1,181 @@
+{
+  "companies": {
+    "source_table": "res_company",
+    "field_mapping": {
+      "name": "name",
+      "tax_id": "tax_calculation_rounding_method",
+      "address": "partner_id",
+      "email": "email",
+      "phone": "phone"
+    }
+  },
+  "contacts": {
+    "source_table": "res_partner",
+    "field_mapping": {
+      "company_id": "company_id",
+      "name": "name",
+      "type": "type",
+      "tax_number": "vat",
+      "email": "email",
+      "phone": "phone",
+      "address": "street",
+      "source_id": "id"
+    }
+  },
+  "products": {
+    "source_table": "product_template",
+    "field_mapping": {
+      "company_id": "company_id",
+      "name": "name",
+      "description": "description",
+      "price": "list_price",
+      "type": "type",
+      "source_id": "id"
+    }
+  },
+  "taxes": {
+    "source_table": "account_tax",
+    "field_mapping": {
+      "company_id": "company_id",
+      "name": "name",
+      "rate": "amount",
+      "type": "type_tax_use",
+      "description": "description"
+    }
+  },
+  "accounts": {
+    "source_table": "account_account",
+    "field_mapping": {
+      "code": "code_store",
+      "name": "name",
+      "type": "account_type",
+      "source_id": "id"
+    }
+  },
+  "journal_entries": {
+    "source_table": "account_move",
+    "field_mapping": {
+      "company_id": "company_id",
+      "entry_date": "date",
+      "reference": "ref",
+      "description": "narration",
+      "source_id": "id"
+    }
+  },
+  "journal_lines": {
+    "source_table": "account_move_line",
+    "field_mapping": {
+      "journal_entry_id": "move_id",
+      "account_id": "account_id",
+      "debit": "debit",
+      "credit": "credit",
+      "description": "name"
+    }
+  },
+  "invoices": {
+    "source_table": "account_move",
+    "field_mapping": {
+      "company_id": "company_id",
+      "contact_id": "partner_id",
+      "invoice_number": "name",
+      "type": "move_type",
+      "currency": "currency_id",
+      "exchange_rate": "invoice_currency_rate",
+      "invoice_date": "invoice_date",
+      "due_date": "invoice_date_due",
+      "total_untaxed": "amount_untaxed",
+      "total_tax": "amount_tax",
+      "total_amount": "amount_total",
+      "status": "state",
+      "source_id": "id"
+    }
+  },
+  "invoice_lines": {
+    "source_table": "account_move_line",
+    "field_mapping": {
+      "invoice_id": "move_id",
+      "product_id": "product_id",
+      "description": "name",
+      "quantity": "quantity",
+      "unit_price": "price_unit",
+      "tax_id": "tax_line_id",
+      "subtotal": "price_subtotal"
+    }
+  },
+  "payments": {
+    "source_table": "account_payment",
+    "field_mapping": {
+      "invoice_id": "move_id",
+      "payment_date": "date",
+      "amount": "amount",
+      "payment_method": "payment_method_id",
+      "reference": "payment_reference",
+      "source_id": "id"
+    }
+  },
+  "audit_results": {
+    "source_table": "ir_logging",
+    "field_mapping": {
+      "entity_type": "type",
+      "entity_id": "id",
+      "rule_name": "name",
+      "risk_level": "level",
+      "issue_detected": "message"
+    }
+  },
+  "audit_logs": {
+    "source_table": "ir_logging",
+    "field_mapping": {
+      "entity_type": "type",
+      "entity_id": "id",
+      "action": "func",
+      "details": "message",
+      "risk_level": "level"
+    }
+  },
+  "purchase_orders": {
+    "source_table": "purchase_order",
+    "field_mapping": {
+      "company_id": "company_id",
+      "contact_id": "partner_id",
+      "order_number": "name",
+      "order_date": "date_order",
+      "due_date": "date_planned",
+      "total_amount": "amount_total",
+      "status": "state",
+      "source_id": "id"
+    }
+  },
+  "purchase_order_lines": {
+    "source_table": "purchase_order_line",
+    "field_mapping": {
+      "purchase_order_id": "order_id",
+      "product_id": "product_id",
+      "description": "name",
+      "quantity": "product_qty",
+      "unit_price": "price_unit",
+      "subtotal": "price_subtotal"
+    }
+  },
+  "inventory": {
+    "source_table": "stock_quant",
+    "field_mapping": {
+      "company_id": "company_id",
+      "product_id": "product_id",
+      "quantity_on_hand": "quantity",
+      "last_updated": "write_date",
+      "source_id": "id"
+    }
+  },
+  "inventory_logs": {
+    "source_table": "stock_move",
+    "field_mapping": {
+      "supplier_id": "partner_id",
+      "product_id": "product_id",
+      "change_quantity": "product_qty",
+      "change_type": "state",
+      "timestamp": "date",
+      "source_id": "id"
+    }
+  }
+}

@@ -1,0 +1,311 @@
+<!-- image -->
+
+## FROM
+
+East Repair Inc. 1912 Harvest Lane New York, NY 12210
+
+BILL TO
+
+John Smith 2 Court Square New York, NY 12210
+
+DESCRIPTION
+
+|   QTY | DESCRIPTION                 |   UNIT PRICE |   AMOUNT |
+|-------|-----------------------------|--------------|----------|
+|     1 | Front and rear brake cables |          100 |      100 |
+|     2 | New set of pedal arms       |           15 |       30 |
+|     3 | Labor 3hrs                  |            5 |       15 |
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+DESCRIPTION
+
+INVOICE #
+
+INVOICE DATE P.O.# 2312/2019
+
+DUE DATE
+
+SHIP TO
+
+John Smith
+
+3787 Pineview Drive
+
+Cambridge, MA 12210
+
+UNIT PRICE
+
+100.00
+
+15.00
+
+30.00
+
+15.00
+
+15.00
+
+145.00
+
+Subtotal
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%
+
+Tax: 6.25%

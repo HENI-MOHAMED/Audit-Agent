@@ -1,0 +1,494 @@
+Help on class PdfPipelineOptions in module docling.datamodel.pipeline_options:
+
+class PPddffPPiippeelliinneeOOppttiioonnss(PaginatedPipelineOptions)
+ |  PdfPipelineOptions(*, document_timeout: Optional[float] = None, accelerator_options: docling.datamodel.accelerator_options.AcceleratorOptions = AcceleratorOptions(num_threads=4, device='auto', cuda_use_flash_attention2=False), enable_remote_services: bool = False, allow_external_plugins: bool = False, artifacts_path: Union[pathlib.Path, str, NoneType] = None, do_picture_classification: bool = False, do_picture_description: bool = False, picture_description_options: docling.datamodel.pipeline_options.PictureDescriptionBaseOptions = PictureDescriptionVlmEngineOptions(batch_size=8, scale=2.0, picture_area_threshold=0.05, classification_allow=None, classification_deny=None, classification_min_confidence=0.0, model_spec=VlmModelSpec(name='SmolVLM-256M-Instruct', default_repo_id='HuggingFaceTB/SmolVLM-256M-Instruct', revision='main', prompt='Describe this image in a few sentences.', response_format=<ResponseFormat.PLAINTEXT: 'plaintext'>, supported_engines=None, engine_overrides={<VlmEngineType.MLX: 'mlx'>: EngineModelConfig(repo_id='moot20/SmolVLM-256M-Instruct-MLX', revision=None, torch_dtype=None, extra_config={}), <VlmEngineType.TRANSFORMERS: 'transformers'>: EngineModelConfig(repo_id=None, revision=None, torch_dtype='bfloat16', extra_config={'transformers_model_type': <TransformersModelType.AUTOMODEL_IMAGETEXTTOTEXT: 'automodel-imagetexttotext'>})}, api_overrides={<VlmEngineType.API_LMSTUDIO: 'api_lmstudio'>: ApiModelConfig(params={'model': 'smolvlm-256m-instruct'})}, trust_remote_code=False, stop_strings=[], max_new_tokens=4096), engine_options=AutoInlineVlmEngineOptions(engine_type=<VlmEngineType.AUTO_INLINE: 'auto_inline'>, prefer_vllm=False), prompt='Describe this image in a few sentences.', generation_config={'max_new_tokens': 200, 'do_sample': False}), do_chart_extraction: bool = False, images_scale: float = 1.0, generate_page_images: bool = False, generate_picture_images: bool = False, do_table_structure: bool = True, do_ocr: bool = True, do_code_enrichment: bool = False, do_formula_enrichment: bool = False, force_backend_text: bool = False, table_structure_options: docling.datamodel.pipeline_options.BaseTableStructureOptions = TableStructureOptions(do_cell_matching=True, mode=<TableFormerMode.ACCURATE: 'accurate'>), ocr_options: docling.datamodel.pipeline_options.OcrOptions = OcrAutoOptions(lang=[], force_full_page_ocr=False, bitmap_area_threshold=0.05), layout_options: docling.datamodel.pipeline_options.BaseLayoutOptions = LayoutOptions(keep_empty_clusters=False, skip_cell_assignment=False, create_orphan_clusters=True, model_spec=LayoutModelConfig(name='docling_layout_heron', repo_id='docling-project/docling-layout-heron', revision='main', model_path='', supported_devices=[<AcceleratorDevice.CPU: 'cpu'>, <AcceleratorDevice.CUDA: 'cuda'>, <AcceleratorDevice.MPS: 'mps'>, <AcceleratorDevice.XPU: 'xpu'>])), code_formula_options: docling.datamodel.pipeline_options.CodeFormulaVlmOptions = CodeFormulaVlmOptions(model_spec=VlmModelSpec(name='CodeFormulaV2', default_repo_id='docling-project/CodeFormulaV2', revision='main', prompt='', response_format=<ResponseFormat.PLAINTEXT: 'plaintext'>, supported_engines=None, engine_overrides={<VlmEngineType.TRANSFORMERS: 'transformers'>: EngineModelConfig(repo_id=None, revision=None, torch_dtype=None, extra_config={'transformers_model_type': <TransformersModelType.AUTOMODEL_IMAGETEXTTOTEXT: 'automodel-imagetexttotext'>, 'extra_generation_config': {'skip_special_tokens': False}})}, api_overrides={}, trust_remote_code=False, stop_strings=['</doctag>', '<end_of_utterance>'], max_new_tokens=4096), engine_options=AutoInlineVlmEngineOptions(engine_type=<VlmEngineType.AUTO_INLINE: 'auto_inline'>, prefer_vllm=False), scale=2.0, max_size=None, extract_code=True, extract_formulas=True), generate_table_images: bool = False, generate_parsed_pages: bool = False, ocr_batch_size: int = 4, layout_batch_size: int = 4, table_batch_size: int = 4, batch_polling_interval_seconds: float = 0.5, queue_max_size: int = 100) -> None
+ |
+ |  Configuration options for the PDF document processing pipeline.
+ |
+ |  Notes:
+ |      - Enabling multiple features (OCR, table structure, formulas) increases the processing time significantly.
+ |          Enable only necessary features for your use case.
+ |      - For production systems processing large document volumes, implement a timeout protection (for instance, 90-120
+ |          seconds via `document_timeout` parameter).
+ |      - OCR requires a system installation of engines (Tesseract, EasyOCR). Verify the installation before enabling
+ |          OCR via `do_ocr=True`.
+ |      - RapidOCR has known issues with read-only filesystems (e.g., Databricks). Consider Tesseract or alternative
+ |          backends for distributed systems.
+ |
+ |  See Also:
+ |      - `examples/pipeline_options_advanced.py`: Comprehensive configuration examples.
+ |
+ |  Method resolution order:
+ |      PdfPipelineOptions
+ |      PaginatedPipelineOptions
+ |      ConvertPipelineOptions
+ |      PipelineOptions
+ |      BaseOptions
+ |      pydantic.main.BaseModel
+ |      builtins.object
+ |
+ |  Data descriptors defined here:
+ |
+ |  ggeenneerraattee__ttaabbllee__iimmaaggeess
+ |
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes defined here:
+ |
+ |  ____aabbssttrraaccttmmeetthhooddss____ = frozenset()
+ |
+ |  ____aannnnoottaattiioonnss____ = {'batch_polling_interval_seconds': typing.Annotated[...
+ |
+ |  ____ccllaassss__vvaarrss____ = {'kind'}
+ |
+ |  ____pprriivvaattee__aattttrriibbuutteess____ = {}
+ |
+ |  ____ppyyddaannttiicc__ccoommpplleettee____ = True
+ |
+ |  ____ppyyddaannttiicc__ccoommppuutteedd__ffiieellddss____ = {}
+ |
+ |  ____ppyyddaannttiicc__ccoorree__sscchheemmaa____ = {'cls': <class 'docling.datamodel.pipeline_...
+ |
+ |  ____ppyyddaannttiicc__ccuussttoomm__iinniitt____ = False
+ |
+ |  ____ppyyddaannttiicc__ddeeccoorraattoorrss____ = DecoratorInfos(validators={}, field_validato...
+ |
+ |  ____ppyyddaannttiicc__ffiieellddss____ = {'accelerator_options': FieldInfo(annotation=Acc...
+ |
+ |  ____ppyyddaannttiicc__ggeenneerriicc__mmeettaaddaattaa____ = {'args': (), 'origin': None, 'paramete...
+ |
+ |  ____ppyyddaannttiicc__ppaarreenntt__nnaammeessppaaccee____ = None
+ |
+ |  ____ppyyddaannttiicc__ppoosstt__iinniitt____ = None
+ |
+ |  ____ppyyddaannttiicc__sseerriiaalliizzeerr____ = SchemaSerializer(serializer=Model(
+ |      Model...
+ |
+ |  ____ppyyddaannttiicc__sseettaattttrr__hhaannddlleerrss____ = {}
+ |
+ |  ____ppyyddaannttiicc__vvaalliiddaattoorr____ = SchemaValidator(title="PdfPipelineOptions", v...
+ |
+ |  ____ssiiggnnaattuurree____ = <Signature (*, document_timeout: Optional[float]... fl...
+ |
+ |  mmooddeell__ccoonnffiigg = {}
+ |
+ |  ----------------------------------------------------------------------
+ |  Data descriptors inherited from BaseOptions:
+ |
+ |  ____wweeaakkrreeff____
+ |      list of weak references to the object
+ |
+ |  ----------------------------------------------------------------------
+ |  Methods inherited from pydantic.main.BaseModel:
+ |
+ |  ____ccooppyy____(self) -> 'Self'
+ |      Returns a shallow copy of the model.
+ |
+ |  ____ddeeeeppccooppyy____(self, memo: 'dict[int, Any] | None' = None) -> 'Self'
+ |      Returns a deep copy of the model.
+ |
+ |  ____ddeellaattttrr____(self, item: 'str') -> 'Any'
+ |      Implement delattr(self, name).
+ |
+ |  ____eeqq____(self, other: 'Any') -> 'bool'
+ |      Return self==value.
+ |
+ |  ____ggeettaattttrr____(self, item: 'str') -> 'Any'
+ |
+ |  ____ggeettssttaattee____(self) -> 'dict[Any, Any]'
+ |      Helper for pickle.
+ |
+ |  ____iinniitt____(self, /, **data: 'Any') -> 'None'
+ |      Create a new model by parsing and validating input data from keyword arguments.
+ |
+ |      Raises [`ValidationError`][pydantic_core.ValidationError] if the input data cannot be
+ |      validated to form a valid model.
+ |
+ |      `self` is explicitly positional-only to allow `self` as a field name.
+ |
+ |  ____iitteerr____(self) -> 'TupleGenerator'
+ |      So `dict(model)` works.
+ |
+ |  ____pprreettttyy____(self, fmt: 'Callable[[Any], Any]', **kwargs: 'Any') -> 'Generator[Any]' from pydantic._internal._repr.Representation
+ |      Used by devtools (https://python-devtools.helpmanual.io/) to pretty print objects.
+ |
+ |  ____rreeppllaaccee____(self, **changes: 'Any') -> 'Self'
+ |      # Because we make use of `@dataclass_transform()`, `__replace__` is already synthesized by
+ |      # type checkers, so we define the implementation in this `if not TYPE_CHECKING:` block:
+ |
+ |  ____rreepprr____(self) -> 'str'
+ |      Return repr(self).
+ |
+ |  ____rreepprr__aarrggss____(self) -> '_repr.ReprArgs'
+ |
+ |  ____rreepprr__nnaammee____(self) -> 'str' from pydantic._internal._repr.Representation
+ |      Name of the instance's class, used in __repr__.
+ |
+ |  ____rreepprr__rreeccuurrssiioonn____(self, object: 'Any') -> 'str' from pydantic._internal._repr.Representation
+ |      Returns the string representation of a recursive object.
+ |
+ |  ____rreepprr__ssttrr____(self, join_str: 'str') -> 'str' from pydantic._internal._repr.Representation
+ |
+ |  ____rriicchh__rreepprr____(self) -> 'RichReprResult' from pydantic._internal._repr.Representation
+ |      Used by Rich (https://rich.readthedocs.io/en/stable/pretty.html) to pretty print objects.
+ |
+ |  ____sseettaattttrr____(self, name: 'str', value: 'Any') -> 'None'
+ |      Implement setattr(self, name, value).
+ |
+ |  ____sseettssttaattee____(self, state: 'dict[Any, Any]') -> 'None'
+ |
+ |  ____ssttrr____(self) -> 'str'
+ |      Return str(self).
+ |
+ |  ccooppyy(self, *, include: 'AbstractSetIntStr | MappingIntStrAny | None' = None, exclude: 'AbstractSetIntStr | MappingIntStrAny | None' = None, update: 'Dict[str, Any] | None' = None, deep: 'bool' = False) -> 'Self'
+ |      Returns a copy of the model.
+ |
+ |      !!! warning "Deprecated"
+ |          This method is now deprecated; use `model_copy` instead.
+ |
+ |      If you need `include` or `exclude`, use:
+ |
+ |      ```python {test="skip" lint="skip"}
+ |      data = self.model_dump(include=include, exclude=exclude, round_trip=True)
+ |      data = {**data, **(update or {})}
+ |      copied = self.model_validate(data)
+ |      ```
+ |
+ |      Args:
+ |          include: Optional set or mapping specifying which fields to include in the copied model.
+ |          exclude: Optional set or mapping specifying which fields to exclude in the copied model.
+ |          update: Optional dictionary of field-value pairs to override field values in the copied model.
+ |          deep: If True, the values of fields that are Pydantic models will be deep-copied.
+ |
+ |      Returns:
+ |          A copy of the model with included, excluded and updated fields as specified.
+ |
+ |  ddiicctt(self, *, include: 'IncEx | None' = None, exclude: 'IncEx | None' = None, by_alias: 'bool' = False, exclude_unset: 'bool' = False, exclude_defaults: 'bool' = False, exclude_none: 'bool' = False) -> 'Dict[str, Any]'
+ |
+ |  jjssoonn(self, *, include: 'IncEx | None' = None, exclude: 'IncEx | None' = None, by_alias: 'bool' = False, exclude_unset: 'bool' = False, exclude_defaults: 'bool' = False, exclude_none: 'bool' = False, encoder: 'Callable[[Any], Any] | None' = PydanticUndefined, models_as_dict: 'bool' = PydanticUndefined, **dumps_kwargs: 'Any') -> 'str'
+ |
+ |  mmooddeell__ccooppyy(self, *, update: 'Mapping[str, Any] | None' = None, deep: 'bool' = False) -> 'Self'
+ |      !!! abstract "Usage Documentation"
+ |          [`model_copy`](../concepts/models.md#model-copy)
+ |
+ |      Returns a copy of the model.
+ |
+ |      !!! note
+ |          The underlying instance's [`__dict__`][object.__dict__] attribute is copied. This
+ |          might have unexpected side effects if you store anything in it, on top of the model
+ |          fields (e.g. the value of [cached properties][functools.cached_property]).
+ |
+ |      Args:
+ |          update: Values to change/add in the new model. Note: the data is not validated
+ |              before creating the new model. You should trust this data.
+ |          deep: Set to `True` to make a deep copy of the model.
+ |
+ |      Returns:
+ |          New model instance.
+ |
+ |  mmooddeell__dduummpp(self, *, mode: "Literal['json', 'python'] | str" = 'python', include: 'IncEx | None' = None, exclude: 'IncEx | None' = None, context: 'Any | None' = None, by_alias: 'bool | None' = None, exclude_unset: 'bool' = False, exclude_defaults: 'bool' = False, exclude_none: 'bool' = False, exclude_computed_fields: 'bool' = False, round_trip: 'bool' = False, warnings: "bool | Literal['none', 'warn', 'error']" = True, fallback: 'Callable[[Any], Any] | None' = None, serialize_as_any: 'bool' = False) -> 'dict[str, Any]'
+ |      !!! abstract "Usage Documentation"
+ |          [`model_dump`](../concepts/serialization.md#python-mode)
+ |
+ |      Generate a dictionary representation of the model, optionally specifying which fields to include or exclude.
+ |
+ |      Args:
+ |          mode: The mode in which `to_python` should run.
+ |              If mode is 'json', the output will only contain JSON serializable types.
+ |              If mode is 'python', the output may contain non-JSON-serializable Python objects.
+ |          include: A set of fields to include in the output.
+ |          exclude: A set of fields to exclude from the output.
+ |          context: Additional context to pass to the serializer.
+ |          by_alias: Whether to use the field's alias in the dictionary key if defined.
+ |          exclude_unset: Whether to exclude fields that have not been explicitly set.
+ |          exclude_defaults: Whether to exclude fields that are set to their default value.
+ |          exclude_none: Whether to exclude fields that have a value of `None`.
+ |          exclude_computed_fields: Whether to exclude computed fields.
+ |              While this can be useful for round-tripping, it is usually recommended to use the dedicated
+ |              `round_trip` parameter instead.
+ |          round_trip: If True, dumped values should be valid as input for non-idempotent types such as Json[T].
+ |          warnings: How to handle serialization errors. False/"none" ignores them, True/"warn" logs errors,
+ |              "error" raises a [`PydanticSerializationError`][pydantic_core.PydanticSerializationError].
+ |          fallback: A function to call when an unknown value is encountered. If not provided,
+ |              a [`PydanticSerializationError`][pydantic_core.PydanticSerializationError] error is raised.
+ |          serialize_as_any: Whether to serialize fields with duck-typing serialization behavior.
+ |
+ |      Returns:
+ |          A dictionary representation of the model.
+ |
+ |  mmooddeell__dduummpp__jjssoonn(self, *, indent: 'int | None' = None, ensure_ascii: 'bool' = False, include: 'IncEx | None' = None, exclude: 'IncEx | None' = None, context: 'Any | None' = None, by_alias: 'bool | None' = None, exclude_unset: 'bool' = False, exclude_defaults: 'bool' = False, exclude_none: 'bool' = False, exclude_computed_fields: 'bool' = False, round_trip: 'bool' = False, warnings: "bool | Literal['none', 'warn', 'error']" = True, fallback: 'Callable[[Any], Any] | None' = None, serialize_as_any: 'bool' = False) -> 'str'
+ |      !!! abstract "Usage Documentation"
+ |          [`model_dump_json`](../concepts/serialization.md#json-mode)
+ |
+ |      Generates a JSON representation of the model using Pydantic's `to_json` method.
+ |
+ |      Args:
+ |          indent: Indentation to use in the JSON output. If None is passed, the output will be compact.
+ |          ensure_ascii: If `True`, the output is guaranteed to have all incoming non-ASCII characters escaped.
+ |              If `False` (the default), these characters will be output as-is.
+ |          include: Field(s) to include in the JSON output.
+ |          exclude: Field(s) to exclude from the JSON output.
+ |          context: Additional context to pass to the serializer.
+ |          by_alias: Whether to serialize using field aliases.
+ |          exclude_unset: Whether to exclude fields that have not been explicitly set.
+ |          exclude_defaults: Whether to exclude fields that are set to their default value.
+ |          exclude_none: Whether to exclude fields that have a value of `None`.
+ |          exclude_computed_fields: Whether to exclude computed fields.
+ |              While this can be useful for round-tripping, it is usually recommended to use the dedicated
+ |              `round_trip` parameter instead.
+ |          round_trip: If True, dumped values should be valid as input for non-idempotent types such as Json[T].
+ |          warnings: How to handle serialization errors. False/"none" ignores them, True/"warn" logs errors,
+ |              "error" raises a [`PydanticSerializationError`][pydantic_core.PydanticSerializationError].
+ |          fallback: A function to call when an unknown value is encountered. If not provided,
+ |              a [`PydanticSerializationError`][pydantic_core.PydanticSerializationError] error is raised.
+ |          serialize_as_any: Whether to serialize fields with duck-typing serialization behavior.
+ |
+ |      Returns:
+ |          A JSON string representation of the model.
+ |
+ |  mmooddeell__ppoosstt__iinniitt(self, context: 'Any', /) -> 'None'
+ |      Override this method to perform additional initialization after `__init__` and `model_construct`.
+ |      This is useful if you want to do some validation that requires the entire model to be initialized.
+ |
+ |  ----------------------------------------------------------------------
+ |  Class methods inherited from pydantic.main.BaseModel:
+ |
+ |  ____ccllaassss__ggeettiitteemm____(typevar_values: 'type[Any] | tuple[type[Any], ...]') -> 'type[BaseModel] | _forward_ref.PydanticRecursiveRef'
+ |
+ |  ____ggeett__ppyyddaannttiicc__ccoorree__sscchheemmaa____(source: 'type[BaseModel]', handler: 'GetCoreSchemaHandler', /) -> 'CoreSchema'
+ |
+ |  ____ggeett__ppyyddaannttiicc__jjssoonn__sscchheemmaa____(core_schema: 'CoreSchema', handler: 'GetJsonSchemaHandler', /) -> 'JsonSchemaValue'
+ |      Hook into generating the model's JSON schema.
+ |
+ |      Args:
+ |          core_schema: A `pydantic-core` CoreSchema.
+ |              You can ignore this argument and call the handler with a new CoreSchema,
+ |              wrap this CoreSchema (`{'type': 'nullable', 'schema': current_schema}`),
+ |              or just call the handler with the original schema.
+ |          handler: Call into Pydantic's internal JSON schema generation.
+ |              This will raise a `pydantic.errors.PydanticInvalidForJsonSchema` if JSON schema
+ |              generation fails.
+ |              Since this gets called by `BaseModel.model_json_schema` you can override the
+ |              `schema_generator` argument to that function to change JSON schema generation globally
+ |              for a type.
+ |
+ |      Returns:
+ |          A JSON schema, as a Python object.
+ |
+ |  ____ppyyddaannttiicc__iinniitt__ssuubbccllaassss____(**kwargs: 'Any') -> 'None'
+ |      This is intended to behave just like `__init_subclass__`, but is called by `ModelMetaclass`
+ |      only after basic class initialization is complete. In particular, attributes like `model_fields` will
+ |      be present when this is called, but forward annotations are not guaranteed to be resolved yet,
+ |      meaning that creating an instance of the class may fail.
+ |
+ |      This is necessary because `__init_subclass__` will always be called by `type.__new__`,
+ |      and it would require a prohibitively large refactor to the `ModelMetaclass` to ensure that
+ |      `type.__new__` was called in such a manner that the class would already be sufficiently initialized.
+ |
+ |      This will receive the same `kwargs` that would be passed to the standard `__init_subclass__`, namely,
+ |      any kwargs passed to the class definition that aren't used internally by Pydantic.
+ |
+ |      Args:
+ |          **kwargs: Any keyword arguments passed to the class definition that aren't used internally
+ |              by Pydantic.
+ |
+ |      Note:
+ |          You may want to override [`__pydantic_on_complete__()`][pydantic.main.BaseModel.__pydantic_on_complete__]
+ |          instead, which is called once the class and its fields are fully initialized and ready for validation.
+ |
+ |  ____ppyyddaannttiicc__oonn__ccoommpplleettee____() -> 'None'
+ |      This is called once the class and its fields are fully initialized and ready to be used.
+ |
+ |      This typically happens when the class is created (just before
+ |      [`__pydantic_init_subclass__()`][pydantic.main.BaseModel.__pydantic_init_subclass__] is called on the superclass),
+ |      except when forward annotations are used that could not immediately be resolved.
+ |      In that case, it will be called later, when the model is rebuilt automatically or explicitly using
+ |      [`model_rebuild()`][pydantic.main.BaseModel.model_rebuild].
+ |
+ |  ccoonnssttrruucctt(_fields_set: 'set[str] | None' = None, **values: 'Any') -> 'Self'
+ |
+ |  ffrroomm__oorrmm(obj: 'Any') -> 'Self'
+ |
+ |  mmooddeell__ccoonnssttrruucctt(_fields_set: 'set[str] | None' = None, **values: 'Any') -> 'Self'
+ |      Creates a new instance of the `Model` class with validated data.
+ |
+ |      Creates a new model setting `__dict__` and `__pydantic_fields_set__` from trusted or pre-validated data.
+ |      Default values are respected, but no other validation is performed.
+ |
+ |      !!! note
+ |          `model_construct()` generally respects the `model_config.extra` setting on the provided model.
+ |          That is, if `model_config.extra == 'allow'`, then all extra passed values are added to the model instance's `__dict__`
+ |          and `__pydantic_extra__` fields. If `model_config.extra == 'ignore'` (the default), then all extra passed values are ignored.
+ |          Because no validation is performed with a call to `model_construct()`, having `model_config.extra == 'forbid'` does not result in
+ |          an error if extra values are passed, but they will be ignored.
+ |
+ |      Args:
+ |          _fields_set: A set of field names that were originally explicitly set during instantiation. If provided,
+ |              this is directly used for the [`model_fields_set`][pydantic.BaseModel.model_fields_set] attribute.
+ |              Otherwise, the field names from the `values` argument will be used.
+ |          values: Trusted or pre-validated data dictionary.
+ |
+ |      Returns:
+ |          A new instance of the `Model` class with validated data.
+ |
+ |  mmooddeell__jjssoonn__sscchheemmaa(by_alias: 'bool' = True, ref_template: 'str' = '#/$defs/{model}', schema_generator: 'type[GenerateJsonSchema]' = <class 'pydantic.json_schema.GenerateJsonSchema'>, mode: 'JsonSchemaMode' = 'validation', *, union_format: "Literal['any_of', 'primitive_type_array']" = 'any_of') -> 'dict[str, Any]'
+ |      Generates a JSON schema for a model class.
+ |
+ |      Args:
+ |          by_alias: Whether to use attribute aliases or not.
+ |          ref_template: The reference template.
+ |          union_format: The format to use when combining schemas from unions together. Can be one of:
+ |
+ |              - `'any_of'`: Use the [`anyOf`](https://json-schema.org/understanding-json-schema/reference/combining#anyOf)
+ |              keyword to combine schemas (the default).
+ |              - `'primitive_type_array'`: Use the [`type`](https://json-schema.org/understanding-json-schema/reference/type)
+ |              keyword as an array of strings, containing each type of the combination. If any of the schemas is not a primitive
+ |              type (`string`, `boolean`, `null`, `integer` or `number`) or contains constraints/metadata, falls back to
+ |              `any_of`.
+ |          schema_generator: To override the logic used to generate the JSON schema, as a subclass of
+ |              `GenerateJsonSchema` with your desired modifications
+ |          mode: The mode in which to generate the schema.
+ |
+ |      Returns:
+ |          The JSON schema for the given model class.
+ |
+ |  mmooddeell__ppaarraammeettrriizzeedd__nnaammee(params: 'tuple[type[Any], ...]') -> 'str'
+ |      Compute the class name for parametrizations of generic classes.
+ |
+ |      This method can be overridden to achieve a custom naming scheme for generic BaseModels.
+ |
+ |      Args:
+ |          params: Tuple of types of the class. Given a generic class
+ |              `Model` with 2 type variables and a concrete model `Model[str, int]`,
+ |              the value `(str, int)` would be passed to `params`.
+ |
+ |      Returns:
+ |          String representing the new class where `params` are passed to `cls` as type variables.
+ |
+ |      Raises:
+ |          TypeError: Raised when trying to generate concrete names for non-generic models.
+ |
+ |  mmooddeell__rreebbuuiilldd(*, force: 'bool' = False, raise_errors: 'bool' = True, _parent_namespace_depth: 'int' = 2, _types_namespace: 'MappingNamespace | None' = None) -> 'bool | None'
+ |      Try to rebuild the pydantic-core schema for the model.
+ |
+ |      This may be necessary when one of the annotations is a ForwardRef which could not be resolved during
+ |      the initial attempt to build the schema, and automatic rebuilding fails.
+ |
+ |      Args:
+ |          force: Whether to force the rebuilding of the model schema, defaults to `False`.
+ |          raise_errors: Whether to raise errors, defaults to `True`.
+ |          _parent_namespace_depth: The depth level of the parent namespace, defaults to 2.
+ |          _types_namespace: The types namespace, defaults to `None`.
+ |
+ |      Returns:
+ |          Returns `None` if the schema is already "complete" and rebuilding was not required.
+ |          If rebuilding _was_ required, returns `True` if rebuilding was successful, otherwise `False`.
+ |
+ |  mmooddeell__vvaalliiddaattee(obj: 'Any', *, strict: 'bool | None' = None, extra: 'ExtraValues | None' = None, from_attributes: 'bool | None' = None, context: 'Any | None' = None, by_alias: 'bool | None' = None, by_name: 'bool | None' = None) -> 'Self'
+ |      Validate a pydantic model instance.
+ |
+ |      Args:
+ |          obj: The object to validate.
+ |          strict: Whether to enforce types strictly.
+ |          extra: Whether to ignore, allow, or forbid extra data during model validation.
+ |              See the [`extra` configuration value][pydantic.ConfigDict.extra] for details.
+ |          from_attributes: Whether to extract data from object attributes.
+ |          context: Additional context to pass to the validator.
+ |          by_alias: Whether to use the field's alias when validating against the provided input data.
+ |          by_name: Whether to use the field's name when validating against the provided input data.
+ |
+ |      Raises:
+ |          ValidationError: If the object could not be validated.
+ |
+ |      Returns:
+ |          The validated model instance.
+ |
+ |  mmooddeell__vvaalliiddaattee__jjssoonn(json_data: 'str | bytes | bytearray', *, strict: 'bool | None' = None, extra: 'ExtraValues | None' = None, context: 'Any | None' = None, by_alias: 'bool | None' = None, by_name: 'bool | None' = None) -> 'Self'
+ |      !!! abstract "Usage Documentation"
+ |          [JSON Parsing](../concepts/json.md#json-parsing)
+ |
+ |      Validate the given JSON data against the Pydantic model.
+ |
+ |      Args:
+ |          json_data: The JSON data to validate.
+ |          strict: Whether to enforce types strictly.
+ |          extra: Whether to ignore, allow, or forbid extra data during model validation.
+ |              See the [`extra` configuration value][pydantic.ConfigDict.extra] for details.
+ |          context: Extra variables to pass to the validator.
+ |          by_alias: Whether to use the field's alias when validating against the provided input data.
+ |          by_name: Whether to use the field's name when validating against the provided input data.
+ |
+ |      Returns:
+ |          The validated Pydantic model.
+ |
+ |      Raises:
+ |          ValidationError: If `json_data` is not a JSON string or the object could not be validated.
+ |
+ |  mmooddeell__vvaalliiddaattee__ssttrriinnggss(obj: 'Any', *, strict: 'bool | None' = None, extra: 'ExtraValues | None' = None, context: 'Any | None' = None, by_alias: 'bool | None' = None, by_name: 'bool | None' = None) -> 'Self'
+ |      Validate the given object with string data against the Pydantic model.
+ |
+ |      Args:
+ |          obj: The object containing string data to validate.
+ |          strict: Whether to enforce types strictly.
+ |          extra: Whether to ignore, allow, or forbid extra data during model validation.
+ |              See the [`extra` configuration value][pydantic.ConfigDict.extra] for details.
+ |          context: Extra variables to pass to the validator.
+ |          by_alias: Whether to use the field's alias when validating against the provided input data.
+ |          by_name: Whether to use the field's name when validating against the provided input data.
+ |
+ |      Returns:
+ |          The validated Pydantic model.
+ |
+ |  ppaarrssee__ffiillee(path: 'str | Path', *, content_type: 'str | None' = None, encoding: 'str' = 'utf8', proto: 'DeprecatedParseProtocol | None' = None, allow_pickle: 'bool' = False) -> 'Self'
+ |
+ |  ppaarrssee__oobbjj(obj: 'Any') -> 'Self'
+ |
+ |  ppaarrssee__rraaww(b: 'str | bytes', *, content_type: 'str | None' = None, encoding: 'str' = 'utf8', proto: 'DeprecatedParseProtocol | None' = None, allow_pickle: 'bool' = False) -> 'Self'
+ |
+ |  sscchheemmaa(by_alias: 'bool' = True, ref_template: 'str' = '#/$defs/{model}') -> 'Dict[str, Any]'
+ |
+ |  sscchheemmaa__jjssoonn(*, by_alias: 'bool' = True, ref_template: 'str' = '#/$defs/{model}', **dumps_kwargs: 'Any') -> 'str'
+ |
+ |  uuppddaattee__ffoorrwwaarrdd__rreeffss(**localns: 'Any') -> 'None'
+ |
+ |  vvaalliiddaattee(value: 'Any') -> 'Self'
+ |
+ |  ----------------------------------------------------------------------
+ |  Readonly properties inherited from pydantic.main.BaseModel:
+ |
+ |  ____ffiieellddss__sseett____
+ |
+ |  mmooddeell__eexxttrraa
+ |      Get extra fields set during validation.
+ |
+ |      Returns:
+ |          A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+ |
+ |  mmooddeell__ffiieellddss__sseett
+ |      Returns the set of fields that have been explicitly set on this model instance.
+ |
+ |      Returns:
+ |          A set of strings representing the fields that have been set,
+ |              i.e. that were not filled from defaults.
+ |
+ |  ----------------------------------------------------------------------
+ |  Data descriptors inherited from pydantic.main.BaseModel:
+ |
+ |  ____ddiicctt____
+ |      dictionary for instance variables
+ |
+ |  ____ppyyddaannttiicc__eexxttrraa____
+ |
+ |  ____ppyyddaannttiicc__ffiieellddss__sseett____
+ |
+ |  ____ppyyddaannttiicc__pprriivvaattee____
+ |
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes inherited from pydantic.main.BaseModel:
+ |
+ |  ____hhaasshh____ = None
+ |
+ |  ____ppyyddaannttiicc__rroooott__mmooddeell____ = False
+ |
+ |  mmooddeell__ccoommppuutteedd__ffiieellddss = {}
+ |
+ |  mmooddeell__ffiieellddss = {'accelerator_options': FieldInfo(annotation=Accelerato...

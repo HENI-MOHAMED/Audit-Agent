@@ -1,0 +1,741 @@
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
+import asyncio
+import json
+import sqlite3
+import os
+import uuid
+import traceback
+from dotenv import load_dotenv
+
+from src.api.models import AgentState
+from src.utils.stream_utils import StreamEmitter, set_emitter
+
+load_dotenv()
+
+router = APIRouter()
+
+_DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/ai_audit_db.sqlite")
+
+
+# ═══════════════════════════════════════════════
+#  GLOBAL CONFIG  (set once, persists across all requests)
+# ═══════════════════════════════════════════════
+
+_global_config: dict = {
+    "db_source": "odoo",
+    "company_name": "my company",
+    # API Keys (initialized from env)
+    "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+    "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
+    # Email Configuration
+    "email_address": os.getenv("EMAIL_ADDRESS", ""),
+    "email_app_password": os.getenv("EMAIL_APP_PASSWORD", ""),
+    # Database Configuration
+    "odoo_db_host": os.getenv("ODOO_DB_HOST", ""),
+    "odoo_db_port": os.getenv("ODOO_DB_PORT", ""),
+    "odoo_db_name": os.getenv("ODOO_DB_NAME", ""),
+    "odoo_db_user": os.getenv("ODOO_DB_USER", ""),
+    "odoo_db_password": os.getenv("ODOO_DB_PASSWORD", ""),
+}
+
+
+class GlobalConfigRequest(BaseModel):
+    db_source: str | None = None
+    company_name: str | None = None
+    # API Keys
+    openai_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    # Email Configuration
+    email_address: str | None = None
+    email_app_password: str | None = None
+    # Database Configuration
+    odoo_db_host: str | None = None
+    odoo_db_port: str | None = None
+    odoo_db_name: str | None = None
+    odoo_db_user: str | None = None
+    odoo_db_password: str | None = None
+
+
+@router.get("/config")
+async def get_config():
+    return _global_config
+
+
+@router.put("/config")
+async def update_config(req: GlobalConfigRequest):
+    if req.db_source is not None:
+        _global_config["db_source"] = req.db_source
+    if req.company_name is not None:
+        _global_config["company_name"] = req.company_name
+    if req.openai_api_key is not None:
+        _global_config["openai_api_key"] = req.openai_api_key
+    if req.deepseek_api_key is not None:
+        _global_config["deepseek_api_key"] = req.deepseek_api_key
+    if req.email_address is not None:
+        _global_config["email_address"] = req.email_address
+    if req.email_app_password is not None:
+        _global_config["email_app_password"] = req.email_app_password
+    if req.odoo_db_host is not None:
+        _global_config["odoo_db_host"] = req.odoo_db_host
+    if req.odoo_db_port is not None:
+        _global_config["odoo_db_port"] = req.odoo_db_port
+    if req.odoo_db_name is not None:
+        _global_config["odoo_db_name"] = req.odoo_db_name
+    if req.odoo_db_user is not None:
+        _global_config["odoo_db_user"] = req.odoo_db_user
+    if req.odoo_db_password is not None:
+        _global_config["odoo_db_password"] = req.odoo_db_password
+    return _global_config
+
+
+# ═══════════════════════════════════════════════
+#  SESSION MANAGEMENT  (thread_id → persistent graph state)
+# ═══════════════════════════════════════════════
+#
+#  Single graph in main.py, checkpointer stores state per thread_id.
+#  All routes share the same checkpoint → state is visible across
+#  chat, audit, local_db, upload, exit for the same session.
+
+_active_sessions: dict[str, dict] = {}
+
+
+def _get_thread_config(session_id: str | None) -> tuple[str, dict]:
+    """Return (session_id, langgraph config) for a given session."""
+    if not session_id:
+        session_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": session_id}}
+    return session_id, config
+
+
+def _initial_input(
+    message: str = "",
+    route: str = "chat",
+    local_db_files: list[str] | None = None,
+    thinking_mode: str = "fast",
+) -> dict:
+    """Build the *input* dict for graph.invoke().
+
+    With a checkpointer, we only pass the delta — the new message.
+    The checkpointer handles merging it into existing state via the
+    `messages` add-reducer.
+    """
+    inp: dict = {
+        "messages": [HumanMessage(content=message)] if message and route == "chat" else [],
+        "user_input": message,
+        "invoces": [],
+        "local_db_files": local_db_files or [],
+        "db_source": _global_config["db_source"],
+        "company_info": {"company_name": _global_config["company_name"]},
+        "route": route,
+        "thinking_mode": thinking_mode,
+    }
+    return inp
+
+
+# ═══════════════════════════════════════════════
+#  REQUEST SCHEMAS
+# ═══════════════════════════════════════════════
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+    thinking_mode: str = "fast"
+
+class AuditRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+
+
+class LocalDbRequest(BaseModel):
+    session_id: str | None = None
+
+
+class ExitRequest(BaseModel):
+    session_id: str | None = None
+
+class EmailSyncRequest(BaseModel):
+    query: str
+    session_id: str | None = None
+
+class SessionResponse(BaseModel):
+    sessions: list[str]
+
+class ContactCreateRequest(BaseModel):
+    name: str
+    tax_number: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    source_system: str | None = "manual"
+    type: str = "supplier"
+
+class ContactUpdateRequest(BaseModel):
+    name: str | None = None
+    tax_number: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    source_system: str | None = None
+    type: str | None = None
+
+
+
+class ProductCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    price: float | None = None
+    cost: float | None = None
+    type: str | None = None
+    source_system: str | None = None
+
+class ProductUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    price: float | None = None
+    cost: float | None = None
+    type: str | None = None
+    source_system: str | None = None
+
+class InventoryLogCreateRequest(BaseModel):
+    supplier_id: int | None = None
+    product_id: int | None = None
+    change_quantity: float | None = None
+    change_type: str | None = None
+    source_system: str | None = None
+    timestamp: str | None = None
+
+class InventoryLogUpdateRequest(BaseModel):
+    supplier_id: int | None = None
+    product_id: int | None = None
+    change_quantity: float | None = None
+    change_type: str | None = None
+    source_system: str | None = None
+    timestamp: str | None = None
+
+# ═══════════════════════════════════════════════
+#  CONTACTS ENDPOINT
+# ═══════════════════════════════════════════════
+
+@router.post("/contacts")
+async def create_contact(req: ContactCreateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO contacts (name, tax_number, email, phone, address, source_system, type)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (req.name, req.tax_number, req.email, req.phone, req.address, req.source_system, req.type))
+        conn.commit()
+        contact_id = cursor.lastrowid
+        return {"ok": True, "id": contact_id}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.put("/contacts/{contact_id}")
+async def update_contact(contact_id: int, req: ContactUpdateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        # Build update query dynamically based on provided fields
+        update_fields = req.dict(exclude_unset=True)
+        if not update_fields:
+            return {"ok": False, "error": "No fields to update"}
+            
+        set_clause = ", ".join([f"{k} = ?" for k in update_fields.keys()])
+        values = list(update_fields.values())
+        values.append(contact_id)
+        
+        cursor.execute(f"UPDATE contacts SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return {"ok": False, "error": "Contact not found"}
+            
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.delete("/contacts/{contact_id}")
+async def delete_contact(contact_id: int):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return {"ok": False, "error": "Contact not found"}
+            
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+# ═══════════════════════════════════════════════
+#  PRODUCTS ENDPOINT
+# ═══════════════════════════════════════════════
+
+@router.post("/products")
+async def create_product(req: ProductCreateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO products (name, description, price, cost, type, source_system)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (req.name, req.description, req.price, req.cost, req.type, req.source_system))
+        conn.commit()
+        product_id = cursor.lastrowid
+        return {"ok": True, "id": product_id}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.put("/products/{product_id}")
+async def update_product(product_id: int, req: ProductUpdateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        # Build update query dynamically based on provided fields
+        update_fields = req.dict(exclude_unset=True)
+        if not update_fields:
+            return {"ok": False, "error": "No fields to update"}
+            
+        set_clause = ", ".join([f"{k} = ?" for k in update_fields.keys()])
+        values = list(update_fields.values())
+        values.append(product_id)
+        
+        cursor.execute(f"UPDATE products SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return {"ok": False, "error": "Product not found"}
+            
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.delete("/products/{product_id}")
+async def delete_product(product_id: int):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return {"ok": False, "error": "Product not found"}
+            
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+# ═══════════════════════════════════════════════
+#  INVENTORY LOGS ENDPOINT
+# ═══════════════════════════════════════════════
+
+@router.post("/inventory_logs")
+async def create_inventory_log(req: InventoryLogCreateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO inventory_logs (supplier_id, product_id, change_quantity, change_type, source_system, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (req.supplier_id, req.product_id, req.change_quantity, req.change_type, req.source_system, req.timestamp))
+        conn.commit()
+        log_id = cursor.lastrowid
+        return {"ok": True, "id": log_id}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.put("/inventory_logs/{log_id}")
+async def update_inventory_log(log_id: int, req: InventoryLogUpdateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        update_fields = req.dict(exclude_unset=True)
+        if not update_fields:
+            return {"ok": False, "error": "No fields to update"}
+            
+        set_clause = ", ".join([f"{k} = ?" for k in update_fields.keys()])
+        values = list(update_fields.values())
+        values.append(log_id)
+        
+        cursor.execute(f"UPDATE inventory_logs SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return {"ok": False, "error": "Inventory log not found"}
+            
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.delete("/inventory_logs/{log_id}")
+async def delete_inventory_log(log_id: int):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM inventory_logs WHERE id = ?", (log_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return {"ok": False, "error": "Inventory log not found"}
+            
+        return {"ok": True}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()
+
+# ═══════════════════════════════════════════════
+#  SESSION ENDPOINTS
+# ═══════════════════════════════════════════════
+
+@router.get("/sessions", response_model=SessionResponse)
+async def list_sessions():
+    return SessionResponse(sessions=list(_active_sessions.keys()))
+
+
+@router.post("/sessions/new")
+async def create_session():
+    session_id = str(uuid.uuid4())
+    _active_sessions[session_id] = {"created": True}
+    return {"session_id": session_id}
+
+
+# ═══════════════════════════════════════════════
+#  HTTP ENDPOINTS – invoke single graph with route field
+# ═══════════════════════════════════════════════
+
+
+# ─── 1. Chat ───
+
+@router.post("/chat")
+async def chat(req: ChatRequest):
+    from main import app as graph_app
+
+    session_id, config = _get_thread_config(req.session_id)
+    _active_sessions.setdefault(session_id, {})
+
+    inp = _initial_input(req.message, route="chat", thinking_mode=req.thinking_mode)
+    result = await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    last = result["messages"][-1]
+    return {"route": "chat", "session_id": session_id, "response": last.content}
+
+
+# ─── 2. Audit ───
+
+@router.post("/audit")
+async def audit(req: AuditRequest):
+    from main import app as graph_app
+
+    session_id, config = _get_thread_config(req.session_id)
+    _active_sessions.setdefault(session_id, {})
+
+    invoices_array = req.message.split("|") if "|" in req.message else [req.message]
+
+    async def process_invoice(invoice_msg: str):
+        inp = _initial_input(invoice_msg, route="audit")
+        return await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    tasks = [process_invoice(inv.strip()) for inv in invoices_array if inv.strip()]
+    
+    if not tasks:
+        return {"route": "audit", "session_id": session_id, "results": []}
+
+    results = await asyncio.gather(*tasks)
+
+    final_results = []
+    for res in results:
+        for inv in res.get("invoces", []):
+            final_results.append({
+                "invoice_number": inv.invoice_number,
+                "state": inv.state,
+                "note": inv.note,
+                "audits_results": inv.audits_results,
+            })
+
+    return {"route": "audit", "session_id": session_id, "results": final_results}
+
+
+# ─── 3. Local DB sync ───
+
+@router.post("/local_db")
+async def local_db_sync(req: LocalDbRequest):
+    from main import app as graph_app
+
+    session_id, config = _get_thread_config(req.session_id)
+    _active_sessions.setdefault(session_id, {})
+
+    inp = _initial_input(route="local_db")
+    await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    return {
+        "route": "local_db",
+        "session_id": session_id,
+        "message": "Database synchronization and terminology normalization completed.",
+    }
+
+
+# ─── 4. Upload docs ───
+
+@router.post("/upload_docs")
+async def upload_docs(
+    files: list[UploadFile] = File(...),
+    session_id: str | None = Form(None),
+):
+    from main import app as graph_app
+
+    sid, config = _get_thread_config(session_id)
+    _active_sessions.setdefault(sid, {})
+
+    upload_dir = os.path.join(os.path.dirname(__file__), "../../data/uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    saved_paths: list[str] = []
+    for f in files:
+        dest = os.path.join(upload_dir, f.filename)
+        with open(dest, "wb") as fh:
+            fh.write(await f.read())
+        saved_paths.append(dest)
+    
+    async def process_file(file_path: str):
+        inp = _initial_input(route="upload", local_db_files=[file_path])
+        return await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    tasks = [process_file(path) for path in saved_paths]
+    if tasks:
+        await asyncio.gather(*tasks)
+
+    return {
+        "route": "upload_docs",
+        "session_id": sid,
+        "message": f"Processed {len(saved_paths)} document(s)",
+        "files": saved_paths,
+    }
+
+
+# ─── 5. Exit ───
+
+@router.post("/exit")
+async def exit_conversation(req: ExitRequest):
+    from main import app as graph_app
+
+    session_id, config = _get_thread_config(req.session_id)
+
+    inp = _initial_input(route="exit")
+    await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    _active_sessions.pop(session_id, None)
+
+    return {
+        "route": "exit",
+        "session_id": session_id,
+        "message": "Conversation saved and state reset.",
+    }
+
+# ─── 6. Sync Email ───
+
+@router.post("/sync_email")
+async def sync_email(req: EmailSyncRequest):
+    from main import app as graph_app
+
+    session_id, config = _get_thread_config(req.session_id)
+    _active_sessions.setdefault(session_id, {})
+
+    inp = _initial_input(message=req.query, route="email_sync")
+    await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    return {
+        "route": "email_sync",
+        "session_id": session_id,
+        "message": f"Email sync completed for query: {req.query}",
+    }
+
+
+# ═══════════════════════════════════════════════
+#  WEBSOCKET – live access to ai_audit_db.sqlite
+# ═══════════════════════════════════════════════
+
+def _execute_read_query(sql: str) -> list[dict]:
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(sql)
+    rows = [dict(r) for r in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    return rows
+
+
+def _list_tables() -> list[str]:
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    tables = [r[0] for r in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    return tables
+
+
+def _table_schema(table: str) -> list[dict]:
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA table_info({table})")
+    cols = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [
+        {"cid": c[0], "name": c[1], "type": c[2], "notnull": c[3], "default": c[4], "pk": c[5]}
+        for c in cols
+    ]
+
+
+@router.websocket("/ws/chat")
+async def chat_websocket(ws: WebSocket):
+    from main import app as graph_app
+    await ws.accept()
+
+    try:
+        # 1. Receive the initial JSON payload
+        init_data = await ws.receive_json()
+        message = init_data.get("message", "")
+        session_id = init_data.get("session_id")
+        thinking_mode = init_data.get("thinking_mode", "fast")
+
+        sid, config = _get_thread_config(session_id)
+        _active_sessions.setdefault(sid, {})
+        
+        # Send the resolved session_id back to the client so the frontend can store it
+        await ws.send_json({"type": "session_id", "session_id": sid})
+
+        inp = _initial_input(message, route="chat", thinking_mode=thinking_mode)
+
+        # 2. Setup streaming emitter
+        queue = asyncio.Queue()
+        emitter = StreamEmitter(queue)
+        
+        # We must set the context variable BEFORE starting the thread so it gets copied
+        set_emitter(emitter)
+
+        # 3. Fire the graph execution in a background task
+        async def run_graph():
+            try:
+                result = await asyncio.to_thread(graph_app.invoke, inp, config)
+                last_msg = result["messages"][-1]
+                await queue.put({"type": "message", "content": last_msg.content})
+            except Exception as e:
+                traceback.print_exc()
+                await queue.put({"type": "error", "message": f"Graph Error: {str(e)}"})
+            finally:
+                await queue.put({"type": "done"})
+
+        graph_task = asyncio.create_task(run_graph())
+
+        # 4. Stream events to the WebSocket
+        while True:
+            event = await queue.get()
+            if event["type"] == "done":
+                break
+            await ws.send_json(event)
+
+        await ws.close()
+
+    except WebSocketDisconnect:
+        # Client disconnected
+        pass
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            await ws.send_json({"type": "error", "message": str(e)})
+            await ws.close()
+        except:
+            pass
+
+
+@router.websocket("/ws/db")
+async def db_websocket(ws: WebSocket):
+    await ws.accept()
+
+    if not os.path.exists(_DB_PATH):
+        await ws.send_json({"ok": False, "error": "Local database does not exist. Run /local_db first."})
+        await ws.close()
+        return
+
+    try:
+        while True:
+            raw = await ws.receive_json()
+            action = raw.get("action", "")
+
+            try:
+                if action == "tables":
+                    tables = await asyncio.to_thread(_list_tables)
+                    await ws.send_json({"ok": True, "data": tables})
+
+                elif action == "schema":
+                    table = raw.get("table", "")
+                    if not table:
+                        await ws.send_json({"ok": False, "error": "Missing 'table' field"})
+                        continue
+                    schema = await asyncio.to_thread(_table_schema, table)
+                    await ws.send_json({"ok": True, "data": schema})
+
+                elif action == "query":
+                    sql = raw.get("sql", "").strip()
+                    if not sql:
+                        await ws.send_json({"ok": False, "error": "Missing 'sql' field"})
+                        continue
+
+                    first_word = sql.split()[0].upper()
+                    if first_word not in ("SELECT", "PRAGMA", "EXPLAIN"):
+                        await ws.send_json({"ok": False, "error": "Only SELECT queries are allowed"})
+                        continue
+
+                    rows = await asyncio.to_thread(_execute_read_query, sql)
+                    await ws.send_json({"ok": True, "data": rows, "count": len(rows)})
+
+                else:
+                    await ws.send_json({"ok": False, "error": f"Unknown action: {action}"})
+
+            except Exception as e:
+                await ws.send_json({"ok": False, "error": str(e)})
+
+    except WebSocketDisconnect:
+        pass

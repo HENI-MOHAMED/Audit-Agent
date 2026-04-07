@@ -1,0 +1,56 @@
+{
+  "contacts": {
+    "type": {
+      "contact": "contact"
+    }
+  },
+  "products": {
+    "type": {
+      "consu": "consumable",
+      "service": "service",
+      "combo": "product"
+    }
+  },
+  "taxes": {
+    "type": {
+      "sale": "sales_tax",
+      "purchase": "sales_tax"
+    }
+  },
+  "accounts": {
+    "type": {
+      "asset_current": "asset",
+      "asset_receivable": "asset",
+      "asset_prepayments": "asset",
+      "asset_fixed": "asset",
+      "asset_non_current": "asset",
+      "liability_current": "liability",
+      "liability_payable": "liability",
+      "liability_non_current": "liability",
+      "equity": "equity",
+      "income": "income",
+      "expense": "expense",
+      "income_other": "income",
+      "expense_direct_cost": "expense",
+      "liability_credit_card": "liability",
+      "asset_cash": "asset",
+      "equity_unaffected": "equity"
+    }
+  },
+  "purchase_orders": {
+    "status": {
+      "purchase": "in_progress",
+      "draft": "draft",
+      "sent": "pending"
+    }
+  },
+  "inventory_logs": {
+    "change_type": {
+      "confirmed": "stock_in",
+      "assigned": "stock_out",
+      "partially_available": "adjustment",
+      "done": "completed",
+      "draft": "draft"
+    }
+  }
+}
