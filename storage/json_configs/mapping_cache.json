@@ -1,16 +1,16 @@
 {
   "companies": {
     "source_table": "res_company",
+    "where_clause": null,
     "field_mapping": {
       "name": "name",
-      "tax_id": "tax_calculation_rounding_method",
-      "address": "partner_id",
       "email": "email",
       "phone": "phone"
     }
   },
   "contacts": {
     "source_table": "res_partner",
+    "where_clause": null,
     "field_mapping": {
       "company_id": "company_id",
       "name": "name",
@@ -18,23 +18,26 @@
       "tax_number": "vat",
       "email": "email",
       "phone": "phone",
-      "address": "street",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   },
   "products": {
     "source_table": "product_template",
+    "where_clause": null,
     "field_mapping": {
       "company_id": "company_id",
       "name": "name",
       "description": "description",
       "price": "list_price",
       "type": "type",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   },
   "taxes": {
     "source_table": "account_tax",
+    "where_clause": null,
     "field_mapping": {
       "company_id": "company_id",
       "name": "name",
@@ -45,25 +48,31 @@
   },
   "accounts": {
     "source_table": "account_account",
+    "where_clause": null,
     "field_mapping": {
       "code": "code_store",
       "name": "name",
       "type": "account_type",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   },
   "journal_entries": {
     "source_table": "account_move",
+    "where_clause": "move_type = 'entry'",
     "field_mapping": {
       "company_id": "company_id",
       "entry_date": "date",
       "reference": "ref",
       "description": "narration",
-      "source_id": "id"
+      "source_system": "'odoo'",
+      "source_id": "id",
+      "movement_type": "move_type"
     }
   },
   "journal_lines": {
     "source_table": "account_move_line",
+    "where_clause": null,
     "field_mapping": {
       "journal_entry_id": "move_id",
       "account_id": "account_id",
@@ -74,6 +83,7 @@
   },
   "invoices": {
     "source_table": "account_move",
+    "where_clause": "move_type IN ('out_invoice', 'in_invoice')",
     "field_mapping": {
       "company_id": "company_id",
       "contact_id": "partner_id",
@@ -87,11 +97,13 @@
       "total_tax": "amount_tax",
       "total_amount": "amount_total",
       "status": "state",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   },
   "invoice_lines": {
     "source_table": "account_move_line",
+    "where_clause": null,
     "field_mapping": {
       "invoice_id": "move_id",
       "product_id": "product_id",
@@ -104,37 +116,31 @@
   },
   "payments": {
     "source_table": "account_payment",
+    "where_clause": null,
     "field_mapping": {
       "invoice_id": "move_id",
       "payment_date": "date",
       "amount": "amount",
       "payment_method": "payment_method_id",
       "reference": "payment_reference",
+      "source_system": "'odoo'",
       "source_id": "id"
-    }
-  },
-  "audit_results": {
-    "source_table": "ir_logging",
-    "field_mapping": {
-      "entity_type": "type",
-      "entity_id": "id",
-      "rule_name": "name",
-      "risk_level": "level",
-      "issue_detected": "message"
     }
   },
   "audit_logs": {
     "source_table": "ir_logging",
+    "where_clause": null,
     "field_mapping": {
       "entity_type": "type",
       "entity_id": "id",
-      "action": "func",
+      "action": "name",
       "details": "message",
       "risk_level": "level"
     }
   },
   "purchase_orders": {
     "source_table": "purchase_order",
+    "where_clause": null,
     "field_mapping": {
       "company_id": "company_id",
       "contact_id": "partner_id",
@@ -143,11 +149,13 @@
       "due_date": "date_planned",
       "total_amount": "amount_total",
       "status": "state",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   },
   "purchase_order_lines": {
     "source_table": "purchase_order_line",
+    "where_clause": null,
     "field_mapping": {
       "purchase_order_id": "order_id",
       "product_id": "product_id",
@@ -159,22 +167,26 @@
   },
   "inventory": {
     "source_table": "stock_quant",
+    "where_clause": null,
     "field_mapping": {
       "company_id": "company_id",
       "product_id": "product_id",
       "quantity_on_hand": "quantity",
       "last_updated": "write_date",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   },
   "inventory_logs": {
     "source_table": "stock_move",
+    "where_clause": null,
     "field_mapping": {
       "supplier_id": "partner_id",
       "product_id": "product_id",
       "change_quantity": "product_qty",
       "change_type": "state",
       "timestamp": "date",
+      "source_system": "'odoo'",
       "source_id": "id"
     }
   }

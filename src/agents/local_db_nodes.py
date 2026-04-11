@@ -3,7 +3,7 @@ import os
 import json
 import re
 
-from src.utils.config import get_helper_llm, get_llm, MAX_TOOL_ITERATIONS
+from src.utils.config import get_helper_llm, get_llm, MAX_TOOL_ITERATIONS, helper_llm_json, llm
 from src.api.models import AgentState
 from src.database.db_tools import db_connector
 from src.tools.document_tools import scan_documents, Retreave_from_email, Retreave_from_google_drive
@@ -15,7 +15,7 @@ CANONICAL_SCHEMA: dict[str, list[str]] = {
         "products":        ["company_id", "name", "description", "price", "cost", "type", "source_system", "source_id"],
         "taxes":           ["company_id", "name", "rate", "type", "description"],
         "accounts":        ["company_id", "code", "name", "type", "source_system", "source_id"],
-        "journal_entries": ["company_id", "entry_date", "reference", "description", "source_system", "source_id"],
+        "journal_entries": ["company_id", "entry_date", "reference", "description", "source_system", "source_id","movement_type"],
         "journal_lines":   ["journal_entry_id", "account_id", "debit", "credit", "description"],
         "invoices":        ["company_id", "contact_id", "invoice_number", "type", "currency", "exchange_rate", "invoice_date", "due_date", "total_untaxed", "total_tax", "total_amount", "status", "source_system", "source_id"],
         "invoice_lines":   ["invoice_id", "product_id", "description", "quantity", "unit_price", "tax_id", "subtotal"],
@@ -36,7 +36,7 @@ canonical_desc = "\n".join(
 
 def local_db(state: "AgentState") -> "AgentState":
 
-    mapping_file = "json_configs/mapping_cache.json"
+    mapping_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "json_configs", "mapping_cache.json")
 
     # ------------------------------------------------
     # CANONICAL SCHEMA DEFINITION (single source of truth)
@@ -51,7 +51,7 @@ def local_db(state: "AgentState") -> "AgentState":
     # ------------------------------------------------
 
     import sqlite3
-    db_path = os.path.join(os.path.dirname(__file__), "ai_audit_db.sqlite")
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "ai_audit_db.sqlite")
     if not os.path.exists(db_path):
         print("Creating new ai_audit_db.sqlite")
         conn = sqlite3.connect(db_path)
@@ -138,6 +138,7 @@ def local_db(state: "AgentState") -> "AgentState":
             description TEXT,
             source_system TEXT,
             source_id TEXT,
+            movement_type TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -308,12 +309,59 @@ def local_db(state: "AgentState") -> "AgentState":
     # LOAD OR GENERATE MAPPING
     # ------------------------------------------------
 
+    # Always fetch the Odoo schema for schema export
+    odoo_schema_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "json_configs", "odoo_schema.json")
+    
     if os.path.exists(mapping_file):
 
         with open(mapping_file) as f:
             mapping = json.load(f)
 
         print("Loaded mapping_cache.json")
+        
+        # Fetch and save the current Odoo schema even if mapping exists
+        print("Fetching current Odoo schema...")
+        RELEVANT_TABLE_KEYWORDS = (
+            'account','ledger','journal','entry','move','posting',
+            'invoice','bill','receipt','voucher','statement',
+            'payment','pay','transaction','reconcile','settlement',
+            'partner','customer','client','vendor','supplier','contact',
+            'product','item','service','inventory','stock',
+            'order','purchase','sale','po','so',
+            'tax','vat','fiscal','duty','withholding',
+            'expense','revenue','income','cost','budget','asset',
+            'company','organization','business','branch',
+            'currency','rate','exchange',
+            'reconcile','match','clearing',
+            'salary','payroll','wage',
+            'analytic','dimension','cost_center',
+            'audit','log','history'
+        )
+        
+        tables_json = db_connector.invoke({"query": """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema='public'
+        """, "type": "read", "source": state["db_source"]})
+        
+        all_tables = json.loads(tables_json)
+        tables = [t for t in all_tables if any(kw in t["table_name"].lower() for kw in RELEVANT_TABLE_KEYWORDS)]
+        
+        schema = {}
+        for t in tables:
+            table = t["table_name"]
+            cols_json = db_connector.invoke({"query": f"""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name='{table}'
+            """, "type": "read", "source": state["db_source"]})
+            cols = json.loads(cols_json)
+            schema[table] = [c["column_name"] for c in cols]
+        
+        os.makedirs(os.path.dirname(odoo_schema_file), exist_ok=True)
+        with open(odoo_schema_file, "w") as f:
+            json.dump(schema, f, indent=2)
+        print(f"Saved Odoo schema with {len(schema)} tables to odoo_schema.json")
 
     else:
 
@@ -398,6 +446,13 @@ def local_db(state: "AgentState") -> "AgentState":
 
             schema[table] = [c["column_name"] for c in cols]
 
+        # Save the extracted Odoo schema to a JSON file
+        odoo_schema_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "json_configs", "odoo_schema.json")
+        os.makedirs(os.path.dirname(odoo_schema_file), exist_ok=True)
+        with open(odoo_schema_file, "w") as f:
+            json.dump(schema, f, indent=2)
+        print(f"Saved Odoo schema with {len(schema)} tables to odoo_schema.json")
+
 
 
         prompt = f"""
@@ -420,6 +475,7 @@ Return ONLY a JSON object in this exact format (no extra text):
 {{
   "canonical_table_name": {{
     "source_table": "{state['db_source']}_table_name",
+    "where_clause": "SQL WHERE condition if needed to filter rows, else null",
     "field_mapping": {{
       "canonical_column": "{state['db_source']}_column_or_quoted_constant"
     }}
@@ -429,9 +485,10 @@ Return ONLY a JSON object in this exact format (no extra text):
 7. Only use tables that appear in the provided schema.
 8. If multiple tables fit a canonical table, choose the most semantically similar.
 9. Prefer tables with the largest number of matching columns.
+10. If a source table contains different types of records (like Odoo's account_move containing both invoices and journal entries), use the `where_clause` field to write a valid SQL WHERE condition to isolate only the rows that belong in the respective canonical table. If no filter is needed, leave `where_clause` null.
 """
         print(f"Prompt length: {len(prompt)} characters")
-        response = get_helper_llm().invoke([HumanMessage(content=prompt)])
+        response = llm.invoke([HumanMessage(content=prompt)])
         print(f"DeepSeek mapping response: {response.content} \n \n")
 
         raw = response.content.strip()
@@ -461,7 +518,7 @@ Return ONLY a JSON object in this exact format (no extra text):
                 print(f"Warning: dropping invalid mapping '{k}' -> '{cfg['field_mapping'][k]}' for '{canon}'")
                 del cfg["field_mapping"][k]
 
-        os.makedirs("json_configs", exist_ok=True)
+        os.makedirs(os.path.dirname(mapping_file), exist_ok=True)
         with open(mapping_file, "w") as f:
             json.dump(mapping, f, indent=2)
 
@@ -475,6 +532,7 @@ Return ONLY a JSON object in this exact format (no extra text):
 
         source_table = config["source_table"]
         field_map = config["field_mapping"]
+        where_clause = config.get("where_clause")
 
         if not field_map:
             print(f"Skipping {canonical_table}: no valid field mappings")
@@ -482,8 +540,12 @@ Return ONLY a JSON object in this exact format (no extra text):
 
         source_fields = ",".join(sorted(set(field_map.values())))
 
+        query = f"SELECT {source_fields} FROM {source_table}"
+        if where_clause:
+            query += f" WHERE {where_clause}"
+
         rows_json = db_connector.invoke({
-            "query": f"SELECT {source_fields} FROM {source_table}",
+            "query": query,
             "type": "read",
             "source": state["db_source"]
         })
@@ -533,6 +595,7 @@ Return ONLY a JSON object in this exact format (no extra text):
 #Local database AI Agent Node
 def local_db_agent(state: AgentState) -> AgentState:
     """An AI agent that can read from and write to the local SQLite database based on the user's query."""
+    
     system_prompt = SystemMessage(content=f"""
 You are a Local Database Agent.
 
@@ -719,27 +782,43 @@ END OF INSTRUCTIONS
     state["local_db_files"] = []  # clear after processing to avoid re-processing in loops
     db_llm = get_helper_llm().bind_tools([db_connector])
     db_tool_map = {"db_connector": db_connector}
-    for d in docs:
-        doc_content = scan_documents.invoke(d)
-        doc_chunks = [doc_content[i:i+30000] for i in range(0, len(doc_content), 30000)]
-        msgs = [system_prompt]
-        for chunk in doc_chunks:
-            msgs.append(HumanMessage(content=f"Document chunk:\n{chunk}"))
-            if len([m for m in msgs if isinstance(m, HumanMessage)]) > 2:
-                for i, m in enumerate(msgs):
-                    if isinstance(m, HumanMessage):
-                        msgs.pop(i)
+
+    import concurrent.futures
+
+    def _process_doc(d):
+        print(f"Processing document '{d}' with Local Database Agent...")
+        try:
+            doc_content = scan_documents.invoke(d)
+            doc_chunks = [doc_content[i:i+30000] for i in range(0, len(doc_content), 30000)]
+            msgs = [system_prompt]
+            response = None
+            for chunk in doc_chunks:
+                msgs.append(HumanMessage(content=f"Document chunk:\n{chunk}"))
+                if len([m for m in msgs if isinstance(m, HumanMessage)]) > 2:
+                    for i, m in enumerate(msgs):
+                        if isinstance(m, HumanMessage):
+                            msgs.pop(i)
+                            break
+                for _iteration in range(100):  # allow more iterations for complex document processing
+                    response = db_llm.invoke(msgs)
+                    msgs.append(response)
+                    if not response.tool_calls:
                         break
-            for _iteration in range(100):  # allow more iterations for complex document processing
-                response = db_llm.invoke(msgs)
-                msgs.append(response)
-                if not response.tool_calls:
-                    break
-                tool_results = _execute_tool_calls_parallel(response.tool_calls, db_tool_map)
-                msgs.extend(tool_results)
-            else:
-                print("WARNING: Local DB Agent reached maximum tool iterations.")
-        print(f"Local Database Agent processed document '{d}' with response: {response.content} \n \n")
+                    tool_results = _execute_tool_calls_parallel(response.tool_calls, db_tool_map)
+                    msgs.extend(tool_results)
+                else:
+                    print(f"WARNING: Local DB Agent reached maximum tool iterations for '{d}'.")
+            
+            if response:
+                print(f"Local Database Agent processed document '{d}' with response: {response.content} \n \n")
+        except Exception as e:
+            print(f"Error processing document '{d}': {e}")
+
+    # Process documents in parallel using threads
+    # Using a modest max_workers to avoid overwhelming the LLM API or locking SQLite concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_process_doc, d) for d in docs]
+        concurrent.futures.wait(futures)
 
     return state
 
@@ -776,7 +855,7 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
     import json
     import re
 
-    mapping_file = "json_configs/terminology_mapping.json"
+    mapping_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "json_configs", "terminology_mapping.json")
 
     # ------------------------------------------------
     # CANONICAL TERMINOLOGY
@@ -787,12 +866,13 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
         "product_type": ["product", "service", "consumable", "digital", "asset"],
         "tax_type": ["vat", "sales_tax", "income_tax", "withholding_tax", "custom_tax"],
         "account_type": ["asset", "liability", "equity", "expense", "income"],
-        "invoice_type": ["sales_invoice", "purchase_invoice", "credit_note", "refund", "proforma"],
+        "invoice_type": ["in_invoice", "out_invoice", "in_refund", "out_refund"],
         "purchase_status": ["draft", "pending", "in_progress", "approved", "completed", "cancelled"],
         "inventory_change_type": ["stock_in", "stock_out", "adjustment", "return", "transfer", "damage"],
         "payment_method": ["bank_transfer", "cash", "card", "check", "online_payment", "crypto"],
         "audit_risk_level": ["low", "medium", "high", "critical"],
-        "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"]
+        "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"],
+        "change_type": ["in", "out"]
     }
 
     canonical_values = set(
@@ -808,7 +888,9 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
         "purchase_orders",
         "inventory_logs",
         "payments",
-        "audit_results"
+        "audit_results",
+        "inventory_logs",
+        "invoices",
     ]
 
     # ------------------------------------------------
@@ -866,7 +948,7 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
 
     def apply_terminology_to_db(m: dict):
         import sqlite3
-        _db_path = os.path.join(os.path.dirname(__file__), "ai_audit_db.sqlite")
+        _db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "ai_audit_db.sqlite")
         if not os.path.exists(_db_path):
             return
         conn = sqlite3.connect(_db_path)
@@ -1044,7 +1126,7 @@ Return JSON only.
     # SAVE MAPPING
     # ------------------------------------------------
 
-    os.makedirs("json_configs", exist_ok=True)
+    os.makedirs(os.path.dirname(mapping_file), exist_ok=True)
     with open(mapping_file, "w") as f:
         json.dump(mapping, f, indent=2)
 

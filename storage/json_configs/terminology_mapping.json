@@ -1,7 +1,7 @@
 {
   "contacts": {
     "type": {
-      "contact": "contact"
+      "contact": "partner"
     }
   },
   "products": {
@@ -14,7 +14,7 @@
   "taxes": {
     "type": {
       "sale": "sales_tax",
-      "purchase": "sales_tax"
+      "purchase": "vat"
     }
   },
   "accounts": {
@@ -34,23 +34,36 @@
       "expense_direct_cost": "expense",
       "liability_credit_card": "liability",
       "asset_cash": "asset",
-      "equity_unaffected": "equity"
+      "equity_unaffected": "equity",
+      "expense_other": "expense"
     }
   },
   "purchase_orders": {
     "status": {
-      "purchase": "in_progress",
       "draft": "draft",
+      "purchase": "in_progress",
       "sent": "pending"
     }
   },
   "inventory_logs": {
     "change_type": {
-      "confirmed": "stock_in",
-      "assigned": "stock_out",
-      "partially_available": "adjustment",
-      "done": "completed",
-      "draft": "draft"
+      "draft": "adjustment",
+      "assigned": "transfer",
+      "done": "adjustment",
+      "confirmed": "adjustment",
+      "partially_available": "adjustment"
+    }
+  },
+  "invoices": {
+    "type": {
+      "entry": "journal_entry",
+      "out_invoice": "out_invoice",
+      "in_invoice": "in_invoice",
+      "in_refund": "in_refund",
+      "out_refund": "out_refund"
+    },
+    "status": {
+      "posted": "completed"
     }
   }
 }

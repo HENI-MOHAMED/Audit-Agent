@@ -134,7 +134,7 @@ def _resolve_file_path(file_path: str) -> str:
 def _scan_documents_impl(file_path: str) -> str:
     """Internal implementation for document scanning (supports recursion for archives)."""
     file_path = _resolve_file_path(file_path)
-    if file_path.lower().endswith(('.xlsx', '.xls', '.pdf', '.docx', '.doc')):
+    if file_path.lower().endswith(('.xlsx', '.xls', '.pdf', '.docx', '.doc','.csv')):
         return Scan_PDF(file_path)
     elif file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
         return Scan_image(file_path)
@@ -156,6 +156,24 @@ def _scan_documents_impl(file_path: str) -> str:
             return "\n\n--- Next File ---\n\n".join(results)
         except ImportError:
             return "Error: rarfile library not installed. Run: pip install rarfile"
+    elif file_path.lower().endswith('.zip'):
+        try:
+            import zipfile
+            import tempfile
+            
+            results = []
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                
+                for root, dirs, files in os.walk(temp_dir):
+                    for file in files:
+                        extracted_file_path = os.path.join(root, file)
+                        results.append(_scan_documents_impl(extracted_file_path))
+            
+            return "\n\n--- Next File ---\n\n".join(results)
+        except Exception as e:
+            return f"Error processing zip file: {str(e)}"
     else:
         return f"Unsupported file type: {file_path}"
 

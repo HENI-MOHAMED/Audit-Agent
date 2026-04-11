@@ -34,6 +34,28 @@ export const getConfig = () => request<GlobalConfig>("/config");
 export const updateConfig = (data: Partial<GlobalConfig>) =>
   request<GlobalConfig>("/config", { method: "PUT", body: JSON.stringify(data) });
 
+// ── Mapping ──
+export interface MappingResponse {
+  mapping: Record<string, any> | null;
+  db_source: string;
+  error?: string;
+}
+export const getMapping = () => request<MappingResponse>("/mapping");
+export const updateMapping = (mapping: Record<string, any>) =>
+  request<{ ok: boolean; message?: string; error?: string }>("/mapping", {
+    method: "PUT",
+    body: JSON.stringify({ mapping }),
+  });
+
+// ── Odoo Schema ──
+export interface OdooSchemaResponse {
+  schema: Record<string, string[]> | null;
+  db_source: string;
+  table_count: number;
+  error?: string;
+}
+export const getOdooSchema = () => request<OdooSchemaResponse>("/odoo-schema");
+
 // ── Sessions ──
 export const listSessions = () =>
   request<{ sessions: string[] }>("/sessions");

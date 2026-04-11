@@ -1,11 +1,18 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, FileUp, Loader2, CheckCircle, AlertTriangle, Database, RefreshCw, Mail, Cloud, Sparkles } from "lucide-react";
-import { uploadDocs, syncLocalDb, syncEmail } from "@/services/api";
+import { Upload, FileUp, Loader2, CheckCircle, AlertTriangle, Database, RefreshCw, Mail, Cloud, Sparkles, ChevronDown, ChevronUp, Edit2, Save, X } from "lucide-react";
+import { uploadDocs, syncLocalDb, syncEmail, getMapping, getOdooSchema, updateMapping } from "@/services/api";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function UploadPage() {
   const { sessionId, setSessionId } = useSessionStore();
@@ -19,8 +26,104 @@ export default function UploadPage() {
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [emailSyncResult, setEmailSyncResult] = useState<string | null>(null);
   const [driveSyncResult, setDriveSyncResult] = useState<string | null>(null);
+  const [mappingData, setMappingData] = useState<any>(null);
+  const [odooSchema, setOdooSchema] = useState<Record<string, string[]> | null>(null);
+  const [showMapping, setShowMapping] = useState(false);
+  const [expandedEntities, setExpandedEntities] = useState<Set<string>>(new Set());
+  const [editMode, setEditMode] = useState(false);
+  const [editedMapping, setEditedMapping] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Load mapping cache and odoo schema
+  useEffect(() => {
+    const loadMappingCache = async () => {
+      try {
+        const [mappingRes, schemaRes] = await Promise.all([
+          getMapping(),
+          getOdooSchema()
+        ]);
+        
+        if (mappingRes.mapping && mappingRes.db_source === "odoo") {
+          setMappingData(mappingRes.mapping);
+          setEditedMapping(JSON.parse(JSON.stringify(mappingRes.mapping))); // Deep copy
+          setShowMapping(true);
+        } else {
+          setShowMapping(false);
+        }
+        
+        if (schemaRes.schema) {
+          setOdooSchema(schemaRes.schema);
+        }
+      } catch (err) {
+        console.log('Error loading mapping:', err);
+        setShowMapping(false);
+      }
+    };
+    loadMappingCache();
+  }, [syncResult]); // Reload when sync happens
+
+  const toggleEntity = (entity: string) => {
+    const newExpanded = new Set(expandedEntities);
+    if (newExpanded.has(entity)) {
+      newExpanded.delete(entity);
+    } else {
+      newExpanded.add(entity);
+    }
+    setExpandedEntities(newExpanded);
+  };
+
+  const handleEditMode = () => {
+    setEditMode(true);
+    setEditedMapping(JSON.parse(JSON.stringify(mappingData))); // Fresh deep copy
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+    setEditedMapping(JSON.parse(JSON.stringify(mappingData))); // Reset to original
+  };
+
+  const handleSaveMapping = async () => {
+    setSaving(true);
+    try {
+      const res = await updateMapping(editedMapping);
+      if (res.ok) {
+        setMappingData(editedMapping);
+        setEditMode(false);
+        toast({ title: "Success", description: "Mapping saved successfully" });
+      } else {
+        toast({ title: "Error", description: res.error || "Failed to save mapping", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTableChange = (entity: string, newTable: string) => {
+    setEditedMapping((prev: any) => ({
+      ...prev,
+      [entity]: {
+        ...prev[entity],
+        source_table: newTable,
+      }
+    }));
+  };
+
+  const handleFieldChange = (entity: string, canonicalField: string, newOdooField: string) => {
+    setEditedMapping((prev: any) => ({
+      ...prev,
+      [entity]: {
+        ...prev[entity],
+        field_mapping: {
+          ...prev[entity].field_mapping,
+          [canonicalField]: newOdooField,
+        }
+      }
+    }));
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -197,6 +300,142 @@ export default function UploadPage() {
             <StatusMessage result={syncResult} />
           </CardContent>
         </Card>
+
+        {/* Odoo Mapping Visualization Box */}
+        {showMapping && mappingData && (
+          <Card className="shadow-sm border-border/60 hover:border-border transition-colors md:col-span-2">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2.5 text-lg">
+                    <Sparkles className="h-5 w-5 text-muted-foreground" />
+                    Odoo Database Mapping
+                  </CardTitle>
+                  <CardDescription className="text-sm">
+                    Field mappings between Odoo tables and audit system entities
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  {editMode ? (
+                    <>
+                      <Button
+                        onClick={handleCancelEdit}
+                        variant="outline"
+                        size="sm"
+                        disabled={saving}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleSaveMapping}
+                        size="sm"
+                        disabled={saving}
+                      >
+                        {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                        Save
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      onClick={handleEditMode}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <Edit2 className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                {Object.entries(editMode ? editedMapping : mappingData).map(([entity, config]: [string, any]) => (
+                  <div key={entity} className="border border-border/50 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => toggleEntity(entity)}
+                      className="w-full flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        <Database className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm capitalize">
+                          {entity.replace(/_/g, ' ')}
+                        </span>
+                        {editMode && odooSchema ? (
+                          <Select
+                            value={config.source_table}
+                            onValueChange={(val) => handleTableChange(entity, val)}
+                            disabled={saving}
+                          >
+                            <SelectTrigger className="w-[200px] h-7 text-xs" onClick={(e) => e.stopPropagation()}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.keys(odooSchema).map(table => (
+                                <SelectItem key={table} value={table}>{table}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground bg-background px-2 py-0.5 rounded">
+                            {config.source_table}
+                          </span>
+                        )}
+                      </div>
+                      {expandedEntities.has(entity) ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+                    
+                    {expandedEntities.has(entity) && (
+                      <div className="p-4 bg-background border-t border-border/50">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          {Object.entries(config.field_mapping).map(([targetField, sourceField]: [string, any]) => (
+                            <div key={targetField} className="flex items-center gap-2 p-2 rounded bg-muted/20">
+                              <span className="text-muted-foreground font-mono truncate flex-1">
+                                {targetField}
+                              </span>
+                              <span className="text-muted-foreground">→</span>
+                              {editMode && odooSchema && config.source_table in odooSchema ? (
+                                <Select
+                                  value={sourceField}
+                                  onValueChange={(val) => handleFieldChange(entity, targetField, val)}
+                                  disabled={saving}
+                                >
+                                  <SelectTrigger className="flex-1 h-7 font-mono text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="'N/A'">'N/A'</SelectItem>
+                                    {odooSchema[config.source_table].map(col => (
+                                      <SelectItem key={col} value={col}>{col}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="text-foreground font-mono truncate flex-1 font-medium">
+                                  {sourceField}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50">
+                <p className="text-xs text-blue-700 dark:text-blue-400">
+                  <strong>Tip:</strong> {editMode ? "Select different Odoo tables and columns to customize the mapping. Click Save when done. Then Click on 'Sync Records' to apply the changes." : "Click on any entity to view the detailed field mappings. Use Edit to customize mappings."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Email App Card */}
         <Card className="shadow-sm border-border/60 hover:border-border transition-colors">

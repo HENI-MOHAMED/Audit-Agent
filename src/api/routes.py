@@ -20,25 +20,53 @@ _DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/ai_audit_db.sqlit
 
 
 # ═══════════════════════════════════════════════
-#  GLOBAL CONFIG  (set once, persists across all requests)
+#  GLOBAL CONFIG  (persists to JSON file)
 # ═══════════════════════════════════════════════
 
-_global_config: dict = {
-    "db_source": "odoo",
-    "company_name": "my company",
-    # API Keys (initialized from env)
-    "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
-    "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
-    # Email Configuration
-    "email_address": os.getenv("EMAIL_ADDRESS", ""),
-    "email_app_password": os.getenv("EMAIL_APP_PASSWORD", ""),
-    # Database Configuration
-    "odoo_db_host": os.getenv("ODOO_DB_HOST", ""),
-    "odoo_db_port": os.getenv("ODOO_DB_PORT", ""),
-    "odoo_db_name": os.getenv("ODOO_DB_NAME", ""),
-    "odoo_db_user": os.getenv("ODOO_DB_USER", ""),
-    "odoo_db_password": os.getenv("ODOO_DB_PASSWORD", ""),
-}
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/app_config.json")
+
+def _load_config() -> dict:
+    """Load config from file or create default."""
+    default_config = {
+        "db_source": "odoo",
+        "company_name": "my company",
+        # API Keys (initialized from env)
+        "openai_api_key": os.getenv("OPENAI_API_KEY", ""),
+        "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
+        # Email Configuration
+        "email_address": os.getenv("EMAIL_ADDRESS", ""),
+        "email_app_password": os.getenv("EMAIL_APP_PASSWORD", ""),
+        # Database Configuration
+        "odoo_db_host": os.getenv("ODOO_DB_HOST", ""),
+        "odoo_db_port": os.getenv("ODOO_DB_PORT", ""),
+        "odoo_db_name": os.getenv("ODOO_DB_NAME", ""),
+        "odoo_db_user": os.getenv("ODOO_DB_USER", ""),
+        "odoo_db_password": os.getenv("ODOO_DB_PASSWORD", ""),
+    }
+    
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE, 'r') as f:
+                saved_config = json.load(f)
+            # Merge saved config with defaults (in case new fields were added)
+            default_config.update(saved_config)
+            print(f"Loaded config from {_CONFIG_FILE}")
+        except Exception as e:
+            print(f"Error loading config file: {e}, using defaults")
+    
+    return default_config
+
+def _save_config(config: dict):
+    """Save config to file."""
+    try:
+        os.makedirs(os.path.dirname(_CONFIG_FILE), exist_ok=True)
+        with open(_CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        print(f"Saved config to {_CONFIG_FILE}")
+    except Exception as e:
+        print(f"Error saving config: {e}")
+
+_global_config: dict = _load_config()
 
 
 class GlobalConfigRequest(BaseModel):
@@ -87,7 +115,56 @@ async def update_config(req: GlobalConfigRequest):
         _global_config["odoo_db_user"] = req.odoo_db_user
     if req.odoo_db_password is not None:
         _global_config["odoo_db_password"] = req.odoo_db_password
+    
+    # Save to file for persistence
+    _save_config(_global_config)
+    
     return _global_config
+
+
+@router.get("/mapping")
+async def get_mapping():
+    """Return the Odoo database mapping configuration if it exists."""
+    mapping_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/mapping_cache.json")
+    try:
+        if os.path.exists(mapping_path):
+            with open(mapping_path, 'r') as f:
+                mapping_data = json.load(f)
+            return {"mapping": mapping_data, "db_source": _global_config.get("db_source")}
+        return {"mapping": None, "db_source": _global_config.get("db_source")}
+    except Exception as e:
+        return {"mapping": None, "db_source": _global_config.get("db_source"), "error": str(e)}
+
+
+@router.get("/odoo-schema")
+async def get_odoo_schema():
+    """Return the extracted Odoo database schema (tables and columns) if it exists."""
+    schema_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/odoo_schema.json")
+    try:
+        if os.path.exists(schema_path):
+            with open(schema_path, 'r') as f:
+                schema_data = json.load(f)
+            return {"schema": schema_data, "db_source": _global_config.get("db_source"), "table_count": len(schema_data)}
+        return {"schema": None, "db_source": _global_config.get("db_source"), "table_count": 0}
+    except Exception as e:
+        return {"schema": None, "db_source": _global_config.get("db_source"), "error": str(e), "table_count": 0}
+
+
+class MappingUpdateRequest(BaseModel):
+    mapping: dict
+
+
+@router.put("/mapping")
+async def update_mapping(req: MappingUpdateRequest):
+    """Save updated mapping configuration."""
+    mapping_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/mapping_cache.json")
+    try:
+        os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
+        with open(mapping_path, 'w') as f:
+            json.dump(req.mapping, f, indent=2)
+        return {"ok": True, "message": "Mapping updated successfully"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ═══════════════════════════════════════════════
