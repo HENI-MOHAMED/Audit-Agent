@@ -68,7 +68,7 @@ export function useInvoices() {
   const q = useDbQuery<Invoice>(
     `SELECT i.*, c.name as supplier_name
      FROM invoices i
-     LEFT JOIN contacts c ON i.contact_id = c.id
+     LEFT JOIN contacts c ON i.supplier_id = c.id
      ORDER BY i.id DESC`
   );
   return { data: q.data, isLoading: q.loading, error: q.error, refetch: q.refetch };
@@ -78,7 +78,7 @@ export function useInvoice(id: number) {
   const q = useDbQuery<Invoice>(
     `SELECT i.*, c.name as supplier_name
      FROM invoices i
-     LEFT JOIN contacts c ON i.contact_id = c.id
+     LEFT JOIN contacts c ON i.supplier_id = c.id
      WHERE i.id = ${id}`,
     !!id
   );
@@ -110,8 +110,8 @@ export function useSuppliers() {
   const q = useDbQuery<Supplier>(
     `SELECT c.*, COALESCE(inv_cnt.cnt, 0) as total_invoices
      FROM contacts c
-     LEFT JOIN (SELECT contact_id, COUNT(*) as cnt FROM invoices GROUP BY contact_id) inv_cnt
-       ON c.id = inv_cnt.contact_id
+     LEFT JOIN (SELECT supplier_id, COUNT(*) as cnt FROM invoices GROUP BY supplier_id) inv_cnt
+       ON c.id = inv_cnt.supplier_id
      WHERE c.type = 'supplier'
      ORDER BY c.name`
   );

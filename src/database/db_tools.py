@@ -175,3 +175,77 @@ def write_local_db(query: str) -> str:
     except Exception as e:
         print(f"Error writing to local database: {e}")
         return json.dumps({"error": str(e)})
+@tool
+def import_file_to_local_db(file_path: str, mapping: dict):
+    """
+    Reads a CSV or XLSX file and inserts its contents into the local database
+    using a provided JSON mapping.
+    
+    The mapping format should be:
+    {
+      "canonical_table_name": {
+        "field_mapping": {
+          "canonical_column": "file_column_name",
+          "another_canonical": "'hardcoded_value'"
+        }
+      }
+    }
+    """
+    import pandas as pd
+    import sqlite3
+    import os
+    import json
+
+    print(f"Reading file: {file_path}")
+    if file_path.lower().endswith('.csv'):
+        df = pd.read_csv(file_path)
+    elif file_path.lower().endswith(('.xls', '.xlsx')):
+        df = pd.read_excel(file_path)
+    else:
+        raise ValueError("Unsupported file format. Please provide a CSV or XLSX file.")
+
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "ai_audit_db.sqlite")
+    conn = sqlite3.connect(db_path, timeout=30)
+    cursor = conn.cursor()
+
+    for canonical_table, config in mapping.items():
+        field_map = config.get("field_mapping", {})
+        if not field_map:
+            print(f"Skipping {canonical_table}: no valid field mappings found.")
+            continue
+
+        columns = list(field_map.keys())
+        batch = []
+
+        for _, row in df.iterrows():
+            values = []
+            for c_field in columns:
+                s_field = field_map[c_field]
+                
+                # Handle quoted strings as static hardcoded values
+                if isinstance(s_field, str) and s_field.startswith("'") and s_field.endswith("'"):
+                    val = s_field[1:-1]
+                else:
+                    val = row.get(s_field, None)
+                    # Convert pandas NaT or NaN to None for SQLite
+                    if pd.isna(val):
+                        val = None
+                        
+                # SQLite can't bind dict/list - serialize to JSON string
+                if isinstance(val, (dict, list)):
+                    val = json.dumps(val, ensure_ascii=False)
+                    
+                values.append(val)
+            batch.append(values)
+
+        if batch:
+            placeholders = ",".join(["?"] * len(columns))
+            query = f"INSERT INTO {canonical_table} ({','.join(columns)}) VALUES ({placeholders})"
+            try:
+                cursor.executemany(query, batch)
+                print(f"Imported {len(batch)} rows into {canonical_table} from {os.path.basename(file_path)}")
+            except Exception as e:
+                print(f"Error inserting into {canonical_table}: {e}")
+
+    conn.commit()
+    conn.close()

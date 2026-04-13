@@ -3,9 +3,9 @@ import os
 import json
 import re
 
-from src.utils.config import get_helper_llm, get_llm, MAX_TOOL_ITERATIONS, helper_llm_json, llm
+from src.utils.config import get_helper_llm, get_llm, MAX_TOOL_ITERATIONS, helper_llm_json, llm, helper_llm_resoner
 from src.api.models import AgentState
-from src.database.db_tools import db_connector
+from src.database.db_tools import db_connector, import_file_to_local_db
 from src.tools.document_tools import scan_documents, Retreave_from_email, Retreave_from_google_drive
 from src.agents.audit_agents import _execute_tool_calls_parallel
 
@@ -17,7 +17,7 @@ CANONICAL_SCHEMA: dict[str, list[str]] = {
         "accounts":        ["company_id", "code", "name", "type", "source_system", "source_id"],
         "journal_entries": ["company_id", "entry_date", "reference", "description", "source_system", "source_id","movement_type"],
         "journal_lines":   ["journal_entry_id", "account_id", "debit", "credit", "description"],
-        "invoices":        ["company_id", "contact_id", "invoice_number", "type", "currency", "exchange_rate", "invoice_date", "due_date", "total_untaxed", "total_tax", "total_amount", "status", "source_system", "source_id"],
+        "invoices":        ["supplier_id", "supplier_name", "invoice_number", "type", "currency", "exchange_rate", "invoice_date", "due_date", "total_untaxed", "total_tax", "total_amount", "status", "source_system", "source_id"],
         "invoice_lines":   ["invoice_id", "product_id", "description", "quantity", "unit_price", "tax_id", "subtotal"],
         "payments":        ["invoice_id", "payment_date", "amount", "payment_method", "reference", "source_system", "source_id"],
         "attachments":     ["invoice_id", "file_name", "file_path"],
@@ -157,8 +157,8 @@ def local_db(state: "AgentState") -> "AgentState":
 
         CREATE TABLE IF NOT EXISTS invoices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
-            contact_id INTEGER REFERENCES contacts(id),
+            supplier_id INTEGER REFERENCES contacts(id),
+            supplier_name TEXT,
             invoice_number TEXT,
             type TEXT,
             currency TEXT DEFAULT 'TND',
@@ -174,8 +174,7 @@ def local_db(state: "AgentState") -> "AgentState":
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE INDEX IF NOT EXISTS idx_invoices_company ON invoices(company_id);
-        CREATE INDEX IF NOT EXISTS idx_invoices_contact ON invoices(contact_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_supplier ON invoices(supplier_id);
 
         CREATE TABLE IF NOT EXISTS invoice_lines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -470,6 +469,11 @@ CRITICAL RULES — you MUST follow all of them:
 4. For `source_id`, map it to the {state['db_source']} table's primary key (almost always `id`).
 5. If a column name is identical in both schemas, map it to itself.
 6. Never leave a canonical column out of field_mapping, even if the match is approximate.
+7. Only use tables that appear in the provided schema.
+8. If multiple tables fit a canonical table, choose the most semantically similar.
+9. If a source table contains different types of records, use the `where_clause` field to write a valid SQL WHERE condition to isolate only the rows that belong in the respective canonical table.
+10. IMPORTANT: If the canonical schema requires a name or detail field (like `supplier_name`) but the source table only has an ID (like `partner_id`), you MUST write a valid SQL scalar subquery in the mapping value to fetch it. Example: "(SELECT name FROM res_partner WHERE res_partner.id = account_move.partner_id) not only for names but everything".
+11. You can also use other SQL expressions or functions if needed, like string literals (e.g. "'odoo'").
 
 Return ONLY a JSON object in this exact format (no extra text):
 {{
@@ -477,18 +481,13 @@ Return ONLY a JSON object in this exact format (no extra text):
     "source_table": "{state['db_source']}_table_name",
     "where_clause": "SQL WHERE condition if needed to filter rows, else null",
     "field_mapping": {{
-      "canonical_column": "{state['db_source']}_column_or_quoted_constant"
+      "canonical_column": "{state['db_source']}_column_or_quoted_constant_or_subquery"
     }}
   }}
 }}
-
-7. Only use tables that appear in the provided schema.
-8. If multiple tables fit a canonical table, choose the most semantically similar.
-9. Prefer tables with the largest number of matching columns.
-10. If a source table contains different types of records (like Odoo's account_move containing both invoices and journal entries), use the `where_clause` field to write a valid SQL WHERE condition to isolate only the rows that belong in the respective canonical table. If no filter is needed, leave `where_clause` null.
 """
         print(f"Prompt length: {len(prompt)} characters")
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = helper_llm_resoner.invoke([HumanMessage(content=prompt)])
         print(f"DeepSeek mapping response: {response.content} \n \n")
 
         raw = response.content.strip()
@@ -508,11 +507,8 @@ Return ONLY a JSON object in this exact format (no extra text):
             valid_canon_cols = set(CANONICAL_SCHEMA.get(canon, []))
             bad = [
                 k for k, v in cfg["field_mapping"].items()
-                # Keep quoted string literals (e.g. "'odoo'") — they are constants, not column names
-                if k not in valid_canon_cols or (
-                    not (v.startswith("'") and v.endswith("'"))
-                    and v not in valid_odoo_cols
-                )
+                # We can only strictly validate the canonical columns. The value is now a SQL expression, so we can't easily validate it against valid_odoo_cols.
+                if k not in valid_canon_cols
             ]
             for k in bad:
                 print(f"Warning: dropping invalid mapping '{k}' -> '{cfg['field_mapping'][k]}' for '{canon}'")
@@ -538,7 +534,10 @@ Return ONLY a JSON object in this exact format (no extra text):
             print(f"Skipping {canonical_table}: no valid field mappings")
             continue
 
-        source_fields = ",".join(sorted(set(field_map.values())))
+        select_parts = []
+        for c_field, s_expr in field_map.items():
+            select_parts.append(f"{s_expr} AS {c_field}")
+        source_fields = ", ".join(select_parts)
 
         query = f"SELECT {source_fields} FROM {source_table}"
         if where_clause:
@@ -563,11 +562,7 @@ Return ONLY a JSON object in this exact format (no extra text):
             values = []
 
             for c_field, s_field in field_map.items():
-                # Quoted string literals are constants, not column names (e.g. "'odoo'")
-                if s_field.startswith("'") and s_field.endswith("'"):
-                    val = s_field[1:-1]
-                else:
-                    val = row.get(s_field)
+                val = row.get(c_field)
                 # SQLite can't bind dict/list — serialize to JSON string
                 if isinstance(val, (dict, list)):
                     val = json.dumps(val, ensure_ascii=False)
@@ -611,10 +606,9 @@ MISSION
 When you receive a document:
 
 1. Extract all relevant structured information from the document.
-2. Determine which entities exist in the database.
-3. Insert missing entities.
-4. Store the extracted information in the correct tables.
-5. Maintain proper relationships between entities.
+2. Insert the extracted information directly into the database.
+3. Store the extracted information in the correct tables.
+4. Maintain proper relationships between entities using the generated IDs that SQLite returns or by executing the inserts sequentially.
 
 You must store structured data so that it can later be audited by other AI agents.
 
@@ -622,22 +616,21 @@ You must store structured data so that it can later be audited by other AI agent
 DATABASE ACCESS TOOL
 --------------------------------------------------
 
-You have access to one tool:
+You have access to two tools:
 
-db_connector
+1. db_connector
+   Arguments:
+   - query: SQL query string
+   - type: "read" or "write"
+   - source: database source
+   For ALL queries in this agent you MUST use source = "local_db" and type = "write".
+   IMPORTANT: Use db_connector 90% of the time, especially for general document processing.
 
-Arguments:
-- query: SQL query string
-- type: "read" or "write"
-- source: database source
-
-For ALL queries in this agent you MUST use:
-
-source = "local_db"
-
-Use:
-type = "read"  -> for SELECT queries
-type = "write" -> for INSERT/UPDATE queries
+2. import_file_to_local_db
+   Arguments:
+   - file_path: Path to the CSV or XLSX file
+   - mapping: A JSON mapping linking canonical columns to file columns
+   ONLY use this tool for MASSIVE CSV, XLS, or XLSX files. Do NOT use it for small files or standard documents. When you do use it, make absolutely sure the columns in the mapping matches the ones found in the file chunks.
 
 --------------------------------------------------
 DATABASE SCHEMA
@@ -651,55 +644,21 @@ DATA INGESTION WORKFLOW
 
 Always follow this order:
 
-1) Identify the company (vendor or issuer).
-2) Check if the company already exists.
-3) Insert the company if missing.
-
-4) Identify the contact (customer or recipient).
-5) Check if the contact exists.
-6) Insert contact if missing.
-
-7) Identify the invoice or document reference.
-8) Check if the invoice already exists.
-9) Insert the invoice if it does not exist.
-
-10) Identify products or services.
-11) Insert products if they do not exist.
-
-12) Insert invoice line items.
-
-13) Insert payment information if present.
-
-14) Create accounting journal entries if enough information exists.
-
-15) Store the document path in attachments.
+1) Identify the company (vendor or issuer) and insert it.
+2) Identify the contact (customer or recipient) and insert it.
+3) Identify the invoice or document reference and insert it.
+4) Identify products or services and insert them.
+5) Insert invoice line items.
+6) Insert payment information if present.
+7) Create accounting journal entries if enough information exists.
+8) Store the document path in attachments.
 
 --------------------------------------------------
 DUPLICATE PREVENTION
 --------------------------------------------------
 
-Always check before inserting records.
-
-Examples:
-
-Check company
-SELECT id FROM companies WHERE name = ? OR tax_id = ?
-
-Check contact
-SELECT id FROM contacts WHERE name = ? AND company_id = ?
-
-Check invoice
-SELECT id FROM invoices WHERE invoice_number = ?
-
-Check product
-SELECT id FROM products WHERE name = ? AND company_id = ?
-
-If a record exists:
-    DO NOT insert it again.
-    Use the existing id.
-
-If db_connector returns a duplication error:
-    Ignore the error and continue.
+DO NOT check for duplicates. NEVER query the database to see if a record already exists. 
+Just instantly insert the new records directly into the tables. Do NOT use SELECT queries.
 
 --------------------------------------------------
 ACCOUNTING RULES
@@ -726,10 +685,8 @@ Invoice line items must reflect the document exactly.
 WHEN TO IGNORE A DOCUMENT
 --------------------------------------------------
 
-If the document does NOT contain structured business data
-(e.g. advertisements, spam emails, newsletters, personal messages)
-
-Then do nothing.
+ONLY ignore the document if it is purely an advertisement, spam email, or newsletter.
+If the document is a database export, CSV dump, JSON list, or ANY other tabular format, YOU ABSOLUTELY MUST PROCESS AND INSERT EVERY SINGLE RECORD. Do NOT ignore it. Do NOT skip records.
 
 --------------------------------------------------
 SQL SAFETY RULES
@@ -739,16 +696,17 @@ Only execute valid SQL.
 
 Allowed operations:
 
-SELECT
 INSERT
+UPDATE
 
 Avoid:
 
 DROP
 DELETE
 ALTER
+SELECT
 
-Never modify the schema.
+Never modify the schema or read from the tables.
 
 --------------------------------------------------
 ANTI-LOOP RULES
@@ -757,22 +715,23 @@ ANTI-LOOP RULES
 To avoid infinite loops:
 
 - Do not repeat the same query multiple times.
-- If a query already returned empty results, proceed with insertion.
-- Do not query the same entity more than twice.
+- Once you execute an INSERT, assume it works and move on.
 
 --------------------------------------------------
 OUTPUT BEHAVIOR
 --------------------------------------------------
 
-Your job is to store data, not explain it. and not giving your opinion about the document. you must store the data in the database no matter what, even if the data appears to be a direct export from a database, there is no need to insert this data into the local database again, you must check your self.
+Your job is to store data, not explain or evaluate it. 
+CRITICAL RULE: DO NOT BE LAZY. DO NOT WORRY ABOUT TOKEN LIMITS OR EXHAUSTION.
+Even if the data is a massive database export, log file, CSV, or a continuation of an export chunk, you MUST insert ALL OF IT into the local database without making excuses. 
 
-After processing the document, return a short summary of:
+After processing ALL the data, return a VERY short summary of:
 
 - what entities were created
 - what data was stored
 - what invoice was processed
 
-Keep the response concise.
+Keep the final response concise, but DO NOT skip the database insertion step under any circumstances.
 
 --------------------------------------------------
 END OF INSTRUCTIONS
@@ -780,20 +739,49 @@ END OF INSTRUCTIONS
 """)
     docs = state["local_db_files"]
     state["local_db_files"] = []  # clear after processing to avoid re-processing in loops
-    db_llm = get_helper_llm().bind_tools([db_connector])
-    db_tool_map = {"db_connector": db_connector}
+    db_llm = get_helper_llm().bind_tools([db_connector, import_file_to_local_db])
+    db_tool_map = {
+        "db_connector": db_connector,
+        "import_file_to_local_db": import_file_to_local_db
+    }
 
     import concurrent.futures
 
     def _process_doc(d):
         print(f"Processing document '{d}' with Local Database Agent...")
         try:
-            doc_content = scan_documents.invoke(d)
-            doc_chunks = [doc_content[i:i+30000] for i in range(0, len(doc_content), 30000)]
+            is_large_tabular = False
+            total_rows = 0
+            sample_data = ""
+            
+            ext = d.lower().split('.')[-1]
+            if ext in ['csv', 'xls', 'xlsx']:
+                import pandas as pd
+                try:
+                    if ext == 'csv':
+                        df = pd.read_csv(d)
+                    else:
+                        df = pd.read_excel(d)
+                        
+                    total_rows = len(df)
+                    if total_rows > 20:
+                        is_large_tabular = True
+                        sample_data = df.head(10).to_string(index=False)
+                except Exception as e:
+                    print(f"Error reading tabular file {d} with pandas: {e}")
+
             msgs = [system_prompt]
             response = None
+            
+            if is_large_tabular:
+                chunk = f"File is a large tabular document with {total_rows} rows.\nHere are the first 10 sample rows:\n{sample_data}\n\nDO NOT USE db_connector. You MUST use import_file_to_local_db to insert the data using a correct mapping. The file path is: {d}"
+                doc_chunks = [chunk]
+            else:
+                doc_content = scan_documents.invoke(d)
+                doc_chunks = [doc_content[i:i+30000] for i in range(0, len(doc_content), 30000)]
+
             for chunk in doc_chunks:
-                msgs.append(HumanMessage(content=f"Document chunk:\n{chunk}"))
+                msgs.append(HumanMessage(content=f"Document chunk:\n{chunk}\n\n File path: {d}"))
                 if len([m for m in msgs if isinstance(m, HumanMessage)]) > 2:
                     for i, m in enumerate(msgs):
                         if isinstance(m, HumanMessage):
@@ -862,17 +850,13 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
     # ------------------------------------------------
 
     canonical_hints = {
-        "contact_type": ["supplier", "customer", "employee", "vendor", "partner", "internal"],
-        "product_type": ["product", "service", "consumable", "digital", "asset"],
-        "tax_type": ["vat", "sales_tax", "income_tax", "withholding_tax", "custom_tax"],
-        "account_type": ["asset", "liability", "equity", "expense", "income"],
-        "invoice_type": ["in_invoice", "out_invoice", "in_refund", "out_refund"],
-        "purchase_status": ["draft", "pending", "in_progress", "approved", "completed", "cancelled"],
-        "inventory_change_type": ["stock_in", "stock_out", "adjustment", "return", "transfer", "damage"],
-        "payment_method": ["bank_transfer", "cash", "card", "check", "online_payment", "crypto"],
+        "contact_type": ["supplier", "customer"],
+        "invoice_type": ["in_invoice", "out_invoice", "in_refund", "out_refund", "external", "sales_invoice", "purchase_invoice", "credit_note", "refund", "proforma"],
+        "purchase_status": ["draft", "pending", "sent", "purchase", "cancel", "cancelled", "rejected"],
+        "inventory_change_type": ["in", "out"],
         "audit_risk_level": ["low", "medium", "high", "critical"],
-        "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"],
-        "change_type": ["in", "out"]
+        "validation_state": ["waiting", "VERIFIED", "VERIFIED_WITH_ISSUES", "supplier_not_found", "missing_supplier_name", "no_products", "inventory_not_found", "db_error", "verified"],
+        "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"]
     }
 
     canonical_values = set(
@@ -889,7 +873,6 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
         "inventory_logs",
         "payments",
         "audit_results",
-        "inventory_logs",
         "invoices",
     ]
 

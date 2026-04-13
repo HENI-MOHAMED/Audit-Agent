@@ -1,69 +1,33 @@
 {
   "contacts": {
     "type": {
-      "contact": "partner"
-    }
-  },
-  "products": {
-    "type": {
-      "consu": "consumable",
-      "service": "service",
-      "combo": "product"
+      "contact": "contact"
     }
   },
   "taxes": {
     "type": {
-      "sale": "sales_tax",
-      "purchase": "vat"
+      "purchase": "purchase"
     }
   },
-  "accounts": {
-    "type": {
-      "asset_current": "asset",
-      "asset_receivable": "asset",
-      "asset_prepayments": "asset",
-      "asset_fixed": "asset",
-      "asset_non_current": "asset",
-      "liability_current": "liability",
-      "liability_payable": "liability",
-      "liability_non_current": "liability",
-      "equity": "equity",
-      "income": "income",
-      "expense": "expense",
-      "income_other": "income",
-      "expense_direct_cost": "expense",
-      "liability_credit_card": "liability",
-      "asset_cash": "asset",
-      "equity_unaffected": "equity",
-      "expense_other": "expense"
-    }
-  },
+  "accounts": {},
   "purchase_orders": {
     "status": {
       "draft": "draft",
-      "purchase": "in_progress",
-      "sent": "pending"
+      "purchase": "purchase",
+      "sent": "sent"
     }
   },
   "inventory_logs": {
     "change_type": {
-      "draft": "adjustment",
-      "assigned": "transfer",
-      "done": "adjustment",
-      "confirmed": "adjustment",
-      "partially_available": "adjustment"
+      "draft": "draft"
     }
   },
   "invoices": {
     "type": {
-      "entry": "journal_entry",
       "out_invoice": "out_invoice",
       "in_invoice": "in_invoice",
       "in_refund": "in_refund",
       "out_refund": "out_refund"
-    },
-    "status": {
-      "posted": "completed"
     }
   }
 }

@@ -38,10 +38,9 @@ def audit_agent(state: AgentState) -> AgentState:
     json
     You are an Invoice Scanning Agent. Your task is to extract all relevant data from the invoice given by the user, the company you are working for called """ + company_name + """.
     There is 3 senarios for the user request: 
-    1. the user give you the invoce Number, in this case you use the db_connector tool giving it a SQL query(for you the other arguments are not neccessery, or you can do type : 'read' , source: 'local_db') to retreave the invoice data from the Database, here is the tables: invoices: company_id, contact_id, invoice_number, type, currency, exchange_rate, invoice_date, due_date, total_untaxed, total_tax, total_amount, status, source_system, source_id
-invoice_lines: invoice_id, product_id, description, quantity, unit_price, tax_id, subtotal
+    1. the user give you the invoce Number, in this case you use the db_connector tool with ONLY this exact SQL query (replace INVOICE_NUMBER with the actual invoice number): SELECT i.*, il.*, c.name as supplier_name, c.tax_number, c.email, c.phone, c.address FROM invoices i JOIN invoice_lines il ON i.id = il.invoice_id LEFT JOIN contacts c ON i.supplier_id = c.id WHERE i.invoice_number = 'INVOICE_NUMBER'. Then organize the returned data into the required JSON format.
     2. the user give you the file path of the invoice, in this case you use the scan_documents tool to scan the invoice and extract the data. IMPORTANT: pass the COMPLETE file path exactly as provided by the user (including all directories, e.g. 'email_attachments/sender@example.com/invoice.pdf' or '/home/user/uploads/invoice.pdf'). Never strip the path down to just the filename.
-    3. the user give you some information about the invoice but not the file path or the invoice number, in this case you try to retreave the invoice data using the db_connector tool with a SQL query that search for the invoice based on the information given by the user, if you can't find the invoice using the db_connector tool, then you ask the user for more information or for the file path or the invoice number.
+    3. the user give you some information about the invoice but not the file path or the invoice number, ask the user for the invoice number or file path.
     \n\n
     After you extract the invoice data, your output will have two formats base on the seccess of the extraction: 
     1. if the extraction is successful, The output will be a JSON string with the EXACT following format (the output must be strictly valid JSON with double quotes): 
@@ -92,7 +91,7 @@ invoice_lines: invoice_id, product_id, description, quantity, unit_price, tax_id
                 inv_curr = json_response["invoice_data"].get("currency", "USD").replace("'", "''")
                 due_date = str(json_response["invoice_data"].get("due_date", "")).replace("'", "''")
                 db_connector.invoke({
-                    "query": f""" INSERT INTO invoices (contact_id, invoice_number,type, currency, exchange_rate, due_date, total_untaxed, total_tax, total_amount, status) VALUES ((SELECT id FROM contacts WHERE name = '{sup_name}' LIMIT 1), '{inv_num}', '{inv_type}', '{inv_curr}', 1, '{due_date}', {json_response["invoice_data"].get("amount", 0)}, {json_response["invoice_data"].get("VAT", 0)}, {json_response["invoice_data"].get("total", 0)}, 'draft'); """,
+                    "query": f""" INSERT INTO invoices (supplier_id, supplier_name, invoice_number, type, currency, exchange_rate, due_date, total_untaxed, total_tax, total_amount, status) VALUES ((SELECT id FROM contacts WHERE name = '{sup_name}' AND type = 'supplier' LIMIT 1), '{sup_name}', '{inv_num}', '{inv_type}', '{inv_curr}', 1, '{due_date}', {json_response["invoice_data"].get("amount", 0)}, {json_response["invoice_data"].get("VAT", 0)}, {json_response["invoice_data"].get("total", 0)}, 'draft'); """,
                     "type": "write",
                     "source": "local_db"
                 })
@@ -213,9 +212,8 @@ def supplier_verification_node(state: AgentState) -> AgentState:
             SELECT id, name, tax_number, email, phone, address
             FROM contacts
             WHERE name = '{safe_name}'
-            AND type = 'supplier'
             UNION 
-            SELECT * FROM companies WHERE name = '{safe_name}';
+            SELECT id, name, tax_id as tax_number, email, phone, address FROM companies WHERE name = '{safe_name}';
         """
         exact_query
         try:
@@ -250,9 +248,8 @@ def supplier_verification_node(state: AgentState) -> AgentState:
                 SELECT id, name, tax_number, email, phone, address
                 FROM contacts
                 WHERE name LIKE '%{safe_keyword}%'
-                AND type = 'supplier'
                 UNION 
-                SELECT * FROM companies WHERE name LIKE '%{safe_keyword}%';
+                SELECT id, name, tax_id as tax_number, email, phone, address FROM companies WHERE name LIKE '%{safe_keyword}%';
             """
             try:
                 results_raw = db_connector.invoke({
@@ -375,7 +372,7 @@ def supplier_verification_node(state: AgentState) -> AgentState:
             if supplier_id is not None:
                 try:
                     usage_raw = db_connector.invoke({
-                        "query": f"SELECT COUNT(*) as cnt FROM invoices WHERE contact_id = {supplier_id} OR company_id = {supplier_id};",
+                        "query": f"SELECT COUNT(*) as cnt FROM invoices WHERE supplier_id = {supplier_id};",
                         "type": "read",
                         "source": "local_db",
                     })
@@ -506,16 +503,13 @@ def purchase_order_verification_node(state: AgentState) -> AgentState:
                         pol.product_id,
                         pol.quantity,
                         pol.unit_price,
-                        pol.subtotal,
-                        t.rate as tax_rate,
-                        CASE WHEN t.rate IS NOT NULL THEN pol.subtotal * t.rate / 100 ELSE 0 END as tax_amount
+                        pol.subtotal
                     FROM purchase_orders po
                     JOIN purchase_order_lines pol ON po.id = pol.purchase_order_id
-                    LEFT JOIN taxes t ON pol.tax_id = t.id
                     WHERE pol.product_id = (
                         SELECT id FROM products WHERE name = '{safe_product_name}'
                     )
-                    AND po.contact_id = (SELECT id FROM contacts WHERE name = '{safe_suplier_name}' AND type = 'supplier' LIMIT 1);
+                    AND po.contact_id = (SELECT id FROM contacts WHERE name = '{safe_suplier_name}' LIMIT 1);
                     """,
                     "type": "read",
                     "source": "local_db",
@@ -1681,13 +1675,15 @@ def finalize_node(state: AgentState) -> AgentState:
         invoice.status = "DONE"
         total_score = 0
         for audit_name, audit_result in invoice.audits_results.items():
+            if audit_name == "ai_review":
+                continue  # Skip AI review score for final risk level calculation
             if isinstance(audit_result, dict):
                 score = audit_result.get("score", 0)
                 # Convert to float if it's a string
                 total_score += float(score) if score else 0
             else:
                 total_score += 0
-        avg_score = total_score / len(invoice.audits_results) if invoice.audits_results else 0
+        avg_score = total_score / (len(invoice.audits_results) - 1) if invoice.audits_results else 0
         db_connector.invoke({
             "query": f""" UPDATE audit_logs SET average_score = {avg_score}, ai_score = {invoice.audits_results.get("ai_review", {}).get("score", 0)}, risk_level = '{risk_level(avg_score)}' WHERE entity_type = 'invoice' AND entity_id = (SELECT id FROM invoices WHERE invoice_number = '{invoice.invoice_number}'); """,
             "type": "write",

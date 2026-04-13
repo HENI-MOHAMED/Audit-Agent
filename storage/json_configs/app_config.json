@@ -1,5 +1,5 @@
 {
-  "db_source": "manual",
+  "db_source": "odoo",
   "company_name": "Test Company",
   "openai_api_key": "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",
   "deepseek_api_key": "sk-c1604ea114b24b039cb20ddd50982f6b",
