@@ -6,13 +6,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDbTables, useDbSchema, useDbQuery } from "@/hooks/useWebSocketDB";
-import { Database, Search, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Database, Search, Loader2, AlertTriangle, RefreshCw, Wand2 } from "lucide-react";
+import { syncTerminology } from "@/services/api";
 
 export default function DBExplorerPage() {
   const { tables, loading: tablesLoading, error: tablesError, refresh } = useDbTables();
   const [selectedTable, setSelectedTable] = useState("");
   const [customSql, setCustomSql] = useState("");
   const [activeSql, setActiveSql] = useState("");
+  const [terminologyLoading, setTerminologyLoading] = useState(false);
+
+  const handleTerminologySync = async () => {
+    try {
+      setTerminologyLoading(true);
+      await syncTerminology();
+      // Optional: you could refresh data here if terminology affects tables, or just show a success message
+      refresh();
+    } catch (e) {
+      console.error("Error executing terminology agent:", e);
+    } finally {
+      setTerminologyLoading(false);
+    }
+  };
 
   const { schema, loading: schemaLoading } = useDbSchema(selectedTable);
 
@@ -41,10 +56,26 @@ export default function DBExplorerPage() {
           <h2 className="text-2xl font-semibold">Database Explorer</h2>
           <p className="text-muted-foreground text-sm">Browse the local audit SQLite database</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-2" onClick={refresh}>
-          <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="gap-2" 
+            onClick={handleTerminologySync}
+            disabled={terminologyLoading}
+          >
+            {terminologyLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Wand2 className="h-3.5 w-3.5" />
+            )}
+            Terminology Agent
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2" onClick={refresh}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {tablesError && (

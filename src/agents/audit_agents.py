@@ -227,6 +227,7 @@ Procedure:
 4. Retrieve related Google Drive documents.
 5. Verify transaction authenticity:
    - Confirm supplier existence.
+   - Confirm customer existence.
    - Confirm transaction legitimacy.
    - Detect inconsistencies (price, quantity, date, duplication).
 

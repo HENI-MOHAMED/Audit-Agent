@@ -17,7 +17,7 @@ CANONICAL_SCHEMA: dict[str, list[str]] = {
         "accounts":        ["company_id", "code", "name", "type", "source_system", "source_id"],
         "journal_entries": ["company_id", "entry_date", "reference", "description", "source_system", "source_id","movement_type"],
         "journal_lines":   ["journal_entry_id", "account_id", "debit", "credit", "description"],
-        "invoices":        ["supplier_id", "supplier_name", "invoice_number", "type", "currency", "exchange_rate", "invoice_date", "due_date", "total_untaxed", "total_tax", "total_amount", "status", "source_system", "source_id"],
+        "invoices":        ["supplier_id", "supplier_name", "customer_id", "customer_name", "invoice_number", "type", "currency", "exchange_rate", "invoice_date", "due_date", "total_untaxed", "total_tax", "total_amount", "status", "source_system", "source_id"],
         "invoice_lines":   ["invoice_id", "product_id", "description", "quantity", "unit_price", "tax_id", "subtotal"],
         "payments":        ["invoice_id", "payment_date", "amount", "payment_method", "reference", "source_system", "source_id"],
         "attachments":     ["invoice_id", "file_name", "file_path"],
@@ -159,6 +159,8 @@ def local_db(state: "AgentState") -> "AgentState":
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             supplier_id INTEGER REFERENCES contacts(id),
             supplier_name TEXT,
+            customer_id INTEGER REFERENCES contacts(id),
+            customer_name TEXT,
             invoice_number TEXT,
             type TEXT,
             currency TEXT DEFAULT 'TND',
@@ -175,6 +177,7 @@ def local_db(state: "AgentState") -> "AgentState":
         );
 
         CREATE INDEX IF NOT EXISTS idx_invoices_supplier ON invoices(supplier_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
 
         CREATE TABLE IF NOT EXISTS invoice_lines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -828,14 +831,16 @@ def get_local_db_documents(state: AgentState) -> AgentState:
     state["local_db_files"] = files
     return state
 def clean_llm_json(raw: str):
+    import re
+    raw = raw.strip()
 
-        raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+    if raw.endswith("```"):
+        raw = re.sub(r"\n?```$", "", raw).strip()
 
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw).strip()
-
-        return json.loads(raw)
+    import json
+    return json.loads(raw)
 
 def local_db_terminology_agent(state: AgentState) -> AgentState:
 
@@ -850,17 +855,32 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
     # ------------------------------------------------
 
     canonical_hints = {
-        "contact_type": ["supplier", "customer"],
-        "invoice_type": ["in_invoice", "out_invoice", "in_refund", "out_refund", "external", "sales_invoice", "purchase_invoice", "credit_note", "refund", "proforma"],
-        "purchase_status": ["draft", "pending", "sent", "purchase", "cancel", "cancelled", "rejected"],
-        "inventory_change_type": ["in", "out"],
-        "audit_risk_level": ["low", "medium", "high", "critical"],
-        "validation_state": ["waiting", "VERIFIED", "VERIFIED_WITH_ISSUES", "supplier_not_found", "missing_supplier_name", "no_products", "inventory_not_found", "db_error", "verified"],
-        "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"]
+        "invoices": {
+            "type": ["in_invoice", "out_invoice", "in_refund", "out_refund", "external", "sales_invoice", "purchase_invoice", "credit_note", "refund", "proforma"],
+            "status": ["draft", "paid", "not_paid", "partial"]
+        },
+        "contacts": {
+            "type": ["supplier", "customer"]
+        },
+        "purchase_orders": {
+            "status": ["purchase", "draft", "sent", "pending", "cancel", "cancelled", "rejected", "done"]
+        },
+        "audit_logs": {
+            "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"],
+            "action": ["audit"],
+            "risk_level": ["low", "medium", "high", "critical"]
+        },
+        "audit_results": {
+            "entity_type": ["invoice", "purchase_order", "payment", "inventory", "product", "company", "contact", "journal_entry"],
+            "rule_name": ["supplier_authenticity", "purchase_order_verification", "inventory_order_verification", "tax_verification", "payment_verification", "ai_review"]
+        },
+        "inventory_logs": {
+            "change_type": ["in", "out"]
+        }
     }
 
     canonical_values = set(
-        v for values in canonical_hints.values() for v in values
+        v for table_hints in canonical_hints.values() for col_hints in table_hints.values() for v in col_hints
     )
 
     tables = [
@@ -894,7 +914,6 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
             for col, value_map in columns.items():
 
                 filtered = {}
-
                 for src, canonical in value_map.items():
 
                     if canonical in canonical_values:
@@ -971,49 +990,24 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
     # EXTRACT DISTINCT TERMINOLOGY VALUES
     # ------------------------------------------------
 
-    candidate_keywords = [
-        "type",
-        "status",
-        "state",
-        "method",
-        "risk",
-        "category",
-        "entity",
-    ]
+    target_columns = {
+        "invoices": ["type", "status"],
+        "contacts": ["type"],
+        "purchase_orders": ["status"],
+        "audit_logs": ["entity_type", "action", "risk_level"],
+        "audit_results": ["entity_type", "rule_name"],
+        "inventory_logs": ["change_type"]
+    }
 
     terminology_samples = {}
 
-    for table in tables:
-
-        try:
-
-            columns_query = f"PRAGMA table_info({table})"
-
-            columns_json = db_connector.invoke({
-                "query": columns_query,
-                "type": "read",
-                "source": "local_db"
-            })
-
-            columns = json.loads(columns_json)
-
-        except:
-            continue
-
-        for col in columns:
-
-            col_name = col["name"]
-
-            if not any(k in col_name.lower() for k in candidate_keywords):
-                continue
-
+    for table, columns in target_columns.items():
+        for col_name in columns:
             try:
-
                 query = f"""
                 SELECT DISTINCT {col_name}
                 FROM {table}
                 WHERE {col_name} IS NOT NULL
-                LIMIT 20
                 """
 
                 result = db_connector.invoke({
@@ -1052,7 +1046,7 @@ Rules:
 
 1. Only map categorical values.
 2. Do NOT map column names.
-3. Do NOT invent canonical terms.
+3. Try to find the closest matching canonical term if an exact match isn't present.
 4. Only use canonical values provided.
 5. If a value is already canonical, map it to itself.
 6. Ignore null or numeric values.
@@ -1087,7 +1081,7 @@ Return JSON only.
     # LLM CALL
     # ------------------------------------------------
 
-    response = get_helper_llm().invoke([
+    response = helper_llm_json.invoke([
         system_prompt,
         HumanMessage(content=prompt)
     ])
@@ -1096,7 +1090,9 @@ Return JSON only.
 
     try:
         mapping = clean_llm_json(raw)
-    except:
+    except Exception as e:
+        print(f"Failed to parse LLM JSON: {e}")
+        print(f"Raw response: {raw}")
         mapping = {}
 
     # ------------------------------------------------
@@ -1106,8 +1102,28 @@ Return JSON only.
     mapping = validate_mapping(mapping)
 
     # ------------------------------------------------
-    # SAVE MAPPING
+    # SAVE/MERGE MAPPING
     # ------------------------------------------------
+
+    if os.path.exists(mapping_file):
+        try:
+            with open(mapping_file, "r") as f:
+                old_mapping = json.load(f)
+            
+            for table, columns in old_mapping.items():
+                if table not in mapping:
+                    mapping[table] = columns
+                else:
+                    for col, value_map in columns.items():
+                        if col not in mapping[table]:
+                            mapping[table][col] = value_map
+                        else:
+                            # Keep new mapping, backfill old ones not mapped
+                            for src, canonical in value_map.items():
+                                if src not in mapping[table][col]:
+                                    mapping[table][col][src] = canonical
+        except:
+            pass
 
     os.makedirs(os.path.dirname(mapping_file), exist_ok=True)
     with open(mapping_file, "w") as f:

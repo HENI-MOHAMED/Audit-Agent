@@ -87,11 +87,12 @@ def audit_agent(state: AgentState) -> AgentState:
             if not existing:
                 inv_num = json_response.get("invoice_number", "").replace("'", "''")
                 sup_name = json_response["invoice_data"].get("supplier_name", "").replace("'", "''")
+                cust_name = json_response["invoice_data"].get("customer_name", "").replace("'", "''")
                 inv_type = json_response["invoice_data"].get("type", "external").replace("'", "''")
                 inv_curr = json_response["invoice_data"].get("currency", "USD").replace("'", "''")
                 due_date = str(json_response["invoice_data"].get("due_date", "")).replace("'", "''")
                 db_connector.invoke({
-                    "query": f""" INSERT INTO invoices (supplier_id, supplier_name, invoice_number, type, currency, exchange_rate, due_date, total_untaxed, total_tax, total_amount, status) VALUES ((SELECT id FROM contacts WHERE name = '{sup_name}' AND type = 'supplier' LIMIT 1), '{sup_name}', '{inv_num}', '{inv_type}', '{inv_curr}', 1, '{due_date}', {json_response["invoice_data"].get("amount", 0)}, {json_response["invoice_data"].get("VAT", 0)}, {json_response["invoice_data"].get("total", 0)}, 'draft'); """,
+                    "query": f""" INSERT INTO invoices (supplier_id, supplier_name, customer_id, customer_name, invoice_number, type, currency, exchange_rate, due_date, total_untaxed, total_tax, total_amount, status) VALUES ((SELECT id FROM contacts WHERE name = '{sup_name}' AND type = 'supplier' LIMIT 1), '{sup_name}', (SELECT id FROM contacts WHERE name = '{cust_name}' AND type = 'customer' LIMIT 1), '{cust_name}', '{inv_num}', '{inv_type}', '{inv_curr}', 1, '{due_date}', {json_response["invoice_data"].get("amount", 0)}, {json_response["invoice_data"].get("VAT", 0)}, {json_response["invoice_data"].get("total", 0)}, 'draft'); """,
                     "type": "write",
                     "source": "local_db"
                 })

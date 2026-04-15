@@ -591,6 +591,23 @@ async def local_db_sync(req: LocalDbRequest):
     }
 
 
+@router.post("/terminology")
+async def terminology_sync(req: LocalDbRequest):
+    from main import app as graph_app
+
+    session_id, config = _get_thread_config(req.session_id)
+    _active_sessions.setdefault(session_id, {})
+
+    inp = _initial_input(route="terminology")
+    await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    return {
+        "route": "terminology",
+        "session_id": session_id,
+        "message": "Terminology normalization completed.",
+    }
+
+
 # ─── 4. Upload docs ───
 
 @router.post("/upload_docs")

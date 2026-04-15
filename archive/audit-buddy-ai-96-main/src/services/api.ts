@@ -132,6 +132,13 @@ export const syncLocalDb = (session_id?: string) =>
     body: JSON.stringify({ session_id }),
   });
 
+// ── Terminology Sync ──
+export const syncTerminology = (session_id?: string) =>
+  request<{ route: string; session_id: string; message: string }>("/terminology", {
+    method: "POST",
+    body: JSON.stringify({ session_id }),
+  });
+
 // ── Sync Email ──
 export const syncEmail = (query: string, session_id?: string) =>
   request<{ route: string; session_id: string; message: string }>("/sync_email", {
