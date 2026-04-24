@@ -28,6 +28,7 @@ CANONICAL_SCHEMA: dict[str, list[str]] = {
         "inventory":        ["company_id", "product_id", "quantity_on_hand", "last_updated", "source_system", "source_id"],
         "inventory_logs":   ["supplier_id", "product_id", "change_quantity", "change_type", "timestamp", "source_system", "source_id"]
     }
+db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "ai_audit_db.sqlite")
 
 canonical_desc = "\n".join(
             f"{tbl}: {', '.join(cols)}"
@@ -51,7 +52,6 @@ def local_db(state: "AgentState") -> "AgentState":
     # ------------------------------------------------
 
     import sqlite3
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "ai_audit_db.sqlite")
     if not os.path.exists(db_path):
         print("Creating new ai_audit_db.sqlite")
         conn = sqlite3.connect(db_path)
@@ -586,6 +586,7 @@ Return ONLY a JSON object in this exact format (no extra text):
 
     conn.commit()
     conn.close()
+    remove_duplicates_from_all_tables(db_path=db_path)
 
     return state
 
@@ -632,7 +633,8 @@ You have access to two tools:
 2. import_file_to_local_db
    Arguments:
    - file_path: Path to the CSV or XLSX file
-   - mapping: A JSON mapping linking canonical columns to file columns
+   - mapping: A JSON mapping linking canonical columns to file columns, optionally including a "where_clause" using pandas query syntax to filter rows (e.g. "status == 'paid'").
+   - transformations: (optional) A JSON mapping linking canonical tables and columns to Python expressions that alter the data. Example:""" + """ `{"products": {"name": "str(x).replace('{name: ', '').replace('}', '')"}}` or `{"invoices": {"invoice_date": "(pd.to_datetime(str(x), format='%Y%m%d', errors='coerce').strftime('%Y-%m-%d') if pd.notnull(pd.to_datetime(str(x), format='%Y%m%d', errors='coerce')) else None)"}}`.""" + """ Use `x` as the variable for the column value.
    ONLY use this tool for MASSIVE CSV, XLS, or XLSX files. Do NOT use it for small files or standard documents. When you do use it, make absolutely sure the columns in the mapping matches the ones found in the file chunks.
 
 --------------------------------------------------
@@ -640,6 +642,8 @@ DATABASE SCHEMA
 --------------------------------------------------
 
 {canonical_desc}
+
+IMPORTANT: You are STRICTLY FORBIDDEN from creating new tables or using any columns not explicitly listed above. You must ONLY use the exact tables and columns provided in this schema.
 
 --------------------------------------------------
 DATA INGESTION WORKFLOW
@@ -688,8 +692,9 @@ Invoice line items must reflect the document exactly.
 WHEN TO IGNORE A DOCUMENT
 --------------------------------------------------
 
-ONLY ignore the document if it is purely an advertisement, spam email, or newsletter.
-If the document is a database export, CSV dump, JSON list, or ANY other tabular format, YOU ABSOLUTELY MUST PROCESS AND INSERT EVERY SINGLE RECORD. Do NOT ignore it. Do NOT skip records.
+If the document does not contain any data relevant to the strict canonical schema (e.g., random textual paragraphs, non-financial/non-accounting files, images with no structural data), YOU MUST SKIP IT. DO NOT FORCE irrelevant data into the tables.
+ONLY process documents that actually contain relevant accounting data (such as companies, contacts, invoices, journal entries, products).
+If the document is a database export, CSV dump, JSON list, or ANY other tabular format that contains relevant accounting data, YOU ABSOLUTELY MUST PROCESS AND INSERT EVERY SINGLE RECORD. Do NOT ignore it. Do NOT skip records.
 
 --------------------------------------------------
 SQL SAFETY RULES
@@ -704,12 +709,13 @@ UPDATE
 
 Avoid:
 
+CREATE
 DROP
 DELETE
 ALTER
 SELECT
 
-Never modify the schema or read from the tables.
+Never modify the schema, never create new tables, and never use columns that are not explicitly listed in the DATABASE SCHEMA.
 
 --------------------------------------------------
 ANTI-LOOP RULES
@@ -777,7 +783,7 @@ END OF INSTRUCTIONS
             response = None
             
             if is_large_tabular:
-                chunk = f"File is a large tabular document with {total_rows} rows.\nHere are the first 10 sample rows:\n{sample_data}\n\nDO NOT USE db_connector. You MUST use import_file_to_local_db to insert the data using a correct mapping. The file path is: {d}"
+                chunk = f"File is a large tabular document with {total_rows} rows.\nHere are the first 10 sample rows:\n{sample_data}\n\nDO NOT USE db_connector. You MUST use import_file_to_local_db to insert the data using a correct mapping. If you need to filter rows, include a `where_clause`. If you need to format dates or clean noise, include `transformations`. Use `x` as the variable for modifications. The file path is: {d}"
                 doc_chunks = [chunk]
             else:
                 doc_content = scan_documents.invoke(d)
@@ -810,6 +816,7 @@ END OF INSTRUCTIONS
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(_process_doc, d) for d in docs]
         concurrent.futures.wait(futures)
+    remove_duplicates_from_all_tables(db_path=db_path)
 
     return state
 
@@ -1188,3 +1195,53 @@ def process_emails_agent(state: AgentState) -> AgentState:
         print("WARNING: Email Processing Agent reached maximum tool iterations.")
     print(f"Email Processing Agent completed with response: {response.content} \n \n")
     return state
+
+def remove_duplicates_from_all_tables(db_path: str = None) -> None:
+    """Removes duplicate rows across all tables in the SQLite database, keeping the lowest ID."""
+    import sqlite3
+    if not db_path:
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "ai_audit_db.sqlite")
+    
+    if not os.path.exists(db_path):
+        print("Database does not exist to remove duplicates.")
+        return
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = [row[0] for row in cursor.fetchall() if row[0] != "sqlite_sequence"]
+    
+    total_deleted = 0
+    for table in tables:
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        # Group by all columns except 'id' to identify exact duplicates
+        group_by_cols = [col for col in columns if col != 'id']
+        
+        if not group_by_cols:
+            continue
+            
+        group_by_clause = ", ".join(f'"{col}"' for col in group_by_cols)
+        
+        try:
+            cursor.execute(f"""
+                DELETE FROM {table} 
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM {table} 
+                    GROUP BY {group_by_clause}
+                )
+            """)
+            deleted = cursor.rowcount
+            if deleted > 0:
+                print(f"Removed {deleted} duplicate(s) from table '{table}'.")
+                total_deleted += deleted
+        except Exception as e:
+            print(f"Error removing duplicates from {table}: {e}")
+            
+    conn.commit()
+    conn.close()
+    print(f"Total duplicates removed across all tables: {total_deleted}")
+

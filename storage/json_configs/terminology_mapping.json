@@ -1,51 +1,37 @@
 {
   "invoices": {
     "type": {
-      "purchase_invoice": "purchase_invoice",
       "out_invoice": "out_invoice",
       "in_invoice": "in_invoice",
-      "sales_invoice": "sales_invoice"
+      "in_refund": "in_refund",
+      "out_refund": "out_refund"
     },
     "status": {
-      "partial": "partial",
-      "not_paid": "not_paid",
-      "draft": "draft",
-      "unpaid": "not_paid",
-      "processing": "partial",
-      "paid": "paid",
-      "completed": "paid",
-      "closed": "paid"
+      "posted": "not_paid"
     }
   },
   "contacts": {
     "type": {
-      "client": "customer",
-      "supplier": "supplier",
-      "customer": "customer",
-      "vendor": "supplier"
+      "contact": "customer",
+      "customer": "customer"
     }
   },
   "purchase_orders": {
     "status": {
-      "canceled": "cancelled",
-      "purchase": "purchase",
-      "done": "done",
-      "rejected": "rejected",
-      "sent": "sent",
-      "cancel": "cancel",
-      "approved": "done",
-      "pending": "pending",
-      "completed": "done",
       "draft": "draft",
-      "cancelled": "cancelled"
+      "purchase": "purchase",
+      "sent": "sent"
     }
   },
   "inventory_logs": {
     "change_type": {
-      "in": "in",
-      "decrease": "out",
-      "increase": "in",
-      "out": "out"
+      "draft": "in",
+      "assigned": "in",
+      "done": "in",
+      "confirmed": "in",
+      "partially_available": "in",
+      "stock_in": "in",
+      "stock_out": "out"
     }
   }
 }

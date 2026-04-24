@@ -36,49 +36,49 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="animate-fade-in">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Invoices by Status</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Profit Prediction</CardTitle></CardHeader>
           <CardContent>
-            {data.invoices_by_status.length > 0 ? (
+            {data.profit_prediction.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={data.profit_prediction}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "hsl(var(--card-foreground))" }} />
+                  <Line type="monotone" dataKey="profit" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "hsl(var(--primary))" }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No prediction data</div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="animate-fade-in">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Cash Flow Risk Deficit Probability</CardTitle></CardHeader>
+          <CardContent>
+            {data.predicted_cash_flow_risk.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={data.invoices_by_status} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
-                    {data.invoices_by_status.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Pie data={data.predicted_cash_flow_risk} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
+                    {data.predicted_cash_flow_risk.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "hsl(var(--card-foreground))" }} />
                   <Legend iconSize={8} wrapperStyle={{ fontSize: "12px" }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No invoice data</div>
+              <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No risk data</div>
             )}
           </CardContent>
         </Card>
 
         <Card className="animate-fade-in">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Invoice Volume by Month</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Predicted Future Findings by Risk</CardTitle></CardHeader>
           <CardContent>
-            {data.invoices_by_month.length > 0 ? (
+            {data.predicted_findings_by_risk.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={data.invoices_by_month}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px", color: "hsl(var(--card-foreground))" }} />
-                  <Line type="monotone" dataKey="count" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3, fill: "hsl(var(--primary))" }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No invoice data</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="animate-fade-in">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Findings by Risk Level</CardTitle></CardHeader>
-          <CardContent>
-            {data.findings_by_risk.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={data.findings_by_risk} layout="vertical">
+                <BarChart data={data.predicted_findings_by_risk} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis type="number" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
                   <YAxis dataKey="category" type="category" width={90} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
@@ -87,7 +87,7 @@ export default function DashboardPage() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No audit findings</div>
+              <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">No prediction data</div>
             )}
           </CardContent>
         </Card>

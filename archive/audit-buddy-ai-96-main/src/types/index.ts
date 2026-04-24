@@ -95,8 +95,8 @@ export interface DashboardData {
   total_products: number;
   total_audit_findings: number;
   high_risk_findings: number;
-  invoices_by_status: { name: string; value: number; color: string }[];
-  invoices_by_month: { month: string; count: number }[];
-  findings_by_risk: { category: string; count: number }[];
+  predicted_cash_flow_risk: { name: string; value: number; color: string }[];
+  profit_prediction: { month: string; profit: number; predicted: boolean }[];
+  predicted_findings_by_risk: { category: string; count: number }[];
   recent_audit_results: AuditResultRow[];
 }

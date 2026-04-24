@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useDbQuery } from "@/hooks/useWebSocketDB";
 import type {
   Invoice,
@@ -13,27 +14,38 @@ import type {
 
 // ── Dashboard (aggregated from multiple tables) ──
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: "hsl(220, 14%, 60%)",
-  pending: "hsl(38, 92%, 50%)",
-  posted: "hsl(142, 71%, 45%)",
-  paid: "hsl(210, 80%, 50%)",
-  cancelled: "hsl(0, 84%, 60%)",
-  reversed: "hsl(0, 60%, 45%)",
-};
-
 export function useDashboard(): { data: DashboardData | undefined; isLoading: boolean } {
   const inv = useDbQuery<{ cnt: number }>("SELECT COUNT(*) as cnt FROM invoices");
   const sup = useDbQuery<{ cnt: number }>("SELECT COUNT(*) as cnt FROM contacts WHERE type = 'supplier'");
   const prod = useDbQuery<{ cnt: number }>("SELECT COUNT(*) as cnt FROM products");
   const findings = useDbQuery<{ cnt: number }>("SELECT COUNT(*) as cnt FROM audit_logs");
   const highRisk = useDbQuery<{ cnt: number }>("SELECT COUNT(*) as cnt FROM audit_logs WHERE risk_level IN ('high', 'critical')");
-  const byStatus = useDbQuery<{ status: string; cnt: number }>("SELECT COALESCE(status, 'unknown') as status, COUNT(*) as cnt FROM invoices GROUP BY status");
-  const byMonth = useDbQuery<{ m: string; cnt: number }>("SELECT SUBSTR(invoice_date, 1, 7) as m, COUNT(*) as cnt FROM invoices WHERE invoice_date IS NOT NULL GROUP BY m ORDER BY m");
-  const byRisk = useDbQuery<{ risk_level: string; cnt: number }>("SELECT COALESCE(risk_level, 'unknown') as risk_level, COUNT(*) as cnt FROM audit_results GROUP BY risk_level");
   const recentAudit = useDbQuery<AuditResultRow>("SELECT * FROM audit_results ORDER BY id DESC LIMIT 10");
 
-  const isLoading = inv.loading || sup.loading || prod.loading || findings.loading || highRisk.loading || byStatus.loading || byMonth.loading || byRisk.loading || recentAudit.loading;
+  const [predictions, setPredictions] = useState<any>(null);
+  const [predictionsLoading, setPredictionsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/dashboard/predictions")
+      .then((res) => res.json())
+      .then((data) => {
+        setPredictions(data);
+        setPredictionsLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch predictions", err);
+        // Fallback incase backend doesn't respond
+        setPredictions({
+          profit_prediction: [],
+          predicted_cash_flow_risk: [],
+          predicted_findings_by_risk: []
+        });
+        setPredictionsLoading(false);
+      });
+  }, []);
+
+  const isBasicLoading = inv.loading || sup.loading || prod.loading || findings.loading || highRisk.loading || recentAudit.loading;
+  const isLoading = isBasicLoading || predictionsLoading;
 
   if (isLoading) return { data: undefined, isLoading: true };
 
@@ -43,19 +55,9 @@ export function useDashboard(): { data: DashboardData | undefined; isLoading: bo
     total_products: prod.data[0]?.cnt ?? 0,
     total_audit_findings: findings.data[0]?.cnt ?? 0,
     high_risk_findings: highRisk.data[0]?.cnt ?? 0,
-    invoices_by_status: byStatus.data.map((r) => ({
-      name: r.status ?? "unknown",
-      value: r.cnt,
-      color: STATUS_COLORS[r.status] ?? "hsl(220, 14%, 60%)",
-    })),
-    invoices_by_month: byMonth.data.map((r) => ({
-      month: r.m ?? "",
-      count: r.cnt,
-    })),
-    findings_by_risk: byRisk.data.map((r) => ({
-      category: r.risk_level ?? "unknown",
-      count: r.cnt,
-    })),
+    predicted_cash_flow_risk: predictions?.predicted_cash_flow_risk || [],
+    profit_prediction: predictions?.profit_prediction || [],
+    predicted_findings_by_risk: predictions?.predicted_findings_by_risk || [],
     recent_audit_results: recentAudit.data,
   };
 
@@ -155,4 +157,31 @@ export function useDocuments() {
      ORDER BY a.id DESC`
   );
   return { data: q.data, isLoading: q.loading, error: q.error, refetch: q.refetch };
+}
+
+// ── Full Report (features pipeline + predictions + anomalies) ──
+
+import { getFullReport, type FullReportData } from "@/services/api";
+
+export function useFullReport(): { data: FullReportData | undefined; isLoading: boolean; error: string | null } {
+  const [data, setData] = useState<FullReportData | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+    getFullReport()
+      .then((res) => {
+        setData(res);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch full report", err);
+        setError(err.message || "Failed to load report");
+        setIsLoading(false);
+      });
+  }, []);
+
+  return { data, isLoading, error };
 }

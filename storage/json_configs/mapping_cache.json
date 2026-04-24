@@ -5,14 +5,14 @@
     "field_mapping": {
       "name": "name",
       "tax_id": "(SELECT vat FROM res_partner WHERE res_partner.id = res_company.partner_id)",
-      "address": "(SELECT CONCAT(street, ', ', COALESCE(street2, ''), ', ', city, ', ', zip) FROM res_partner WHERE res_partner.id = res_company.partner_id)",
+      "address": "CONCAT(COALESCE((SELECT street FROM res_partner WHERE res_partner.id = res_company.partner_id), ''), ' ', COALESCE((SELECT city FROM res_partner WHERE res_partner.id = res_company.partner_id), ''))",
       "email": "email",
       "phone": "phone"
     }
   },
   "contacts": {
     "source_table": "res_partner",
-    "where_clause": "active = true",
+    "where_clause": "is_company = false",
     "field_mapping": {
       "company_id": "company_id",
       "name": "name",
@@ -20,7 +20,7 @@
       "tax_number": "vat",
       "email": "email",
       "phone": "phone",
-      "address": "CONCAT(COALESCE(street, ''), ', ', COALESCE(street2, ''), ', ', COALESCE(city, ''), ', ', COALESCE(zip, ''))",
+      "address": "CONCAT(COALESCE(street, ''), ' ', COALESCE(street2, ''), ' ', COALESCE(city, ''), ' ', COALESCE(zip, ''))",
       "source_system": "'odoo'",
       "source_id": "id"
     }
@@ -54,7 +54,7 @@
     "source_table": "account_account",
     "where_clause": "active = true",
     "field_mapping": {
-      "company_id": "(SELECT res_company_id FROM account_account_res_company_rel WHERE account_account_res_company_rel.account_account_id = account_account.id LIMIT 1)",
+      "company_id": "company_id",
       "code": "code_store",
       "name": "name",
       "type": "account_type",
@@ -64,7 +64,7 @@
   },
   "journal_entries": {
     "source_table": "account_move",
-    "where_clause": null,
+    "where_clause": "state = 'posted'",
     "field_mapping": {
       "company_id": "company_id",
       "entry_date": "date",
@@ -88,10 +88,12 @@
   },
   "invoices": {
     "source_table": "account_move",
-    "where_clause": "move_type IN ('in_invoice', 'out_invoice', 'in_refund', 'out_refund')",
+    "where_clause": "move_type IN ('out_invoice', 'out_refund', 'in_invoice', 'in_refund')",
     "field_mapping": {
-      "supplier_id": "partner_id",
-      "supplier_name": "(SELECT name FROM res_partner WHERE res_partner.id = account_move.partner_id)",
+      "supplier_id": "CASE WHEN move_type IN ('in_invoice', 'in_refund') THEN partner_id ELSE NULL END",
+      "supplier_name": "CASE WHEN move_type IN ('in_invoice', 'in_refund') THEN (SELECT name FROM res_partner WHERE res_partner.id = account_move.partner_id) ELSE NULL END",
+      "customer_id": "CASE WHEN move_type IN ('out_invoice', 'out_refund') THEN partner_id ELSE NULL END",
+      "customer_name": "CASE WHEN move_type IN ('out_invoice', 'out_refund') THEN (SELECT name FROM res_partner WHERE res_partner.id = account_move.partner_id) ELSE NULL END",
       "invoice_number": "name",
       "type": "move_type",
       "currency": "(SELECT name FROM res_currency WHERE res_currency.id = account_move.currency_id)",
@@ -108,25 +110,25 @@
   },
   "invoice_lines": {
     "source_table": "account_move_line",
-    "where_clause": "move_id IN (SELECT id FROM account_move WHERE move_type IN ('in_invoice', 'out_invoice', 'in_refund', 'out_refund'))",
+    "where_clause": "move_id IN (SELECT id FROM account_move WHERE move_type IN ('out_invoice', 'out_refund', 'in_invoice', 'in_refund'))",
     "field_mapping": {
       "invoice_id": "move_id",
       "product_id": "product_id",
       "description": "name",
       "quantity": "quantity",
       "unit_price": "price_unit",
-      "tax_id": "tax_line_id",
+      "tax_id": "(SELECT id FROM account_tax LIMIT 1)",
       "subtotal": "price_subtotal"
     }
   },
   "payments": {
     "source_table": "account_payment",
-    "where_clause": null,
+    "where_clause": "state = 'posted'",
     "field_mapping": {
-      "invoice_id": "(SELECT invoice_id FROM account_move__account_payment WHERE account_move__account_payment.payment_id = account_payment.id LIMIT 1)",
+      "invoice_id": "(SELECT invoice_id FROM account_move__account_payment WHERE payment_id = account_payment.id LIMIT 1)",
       "payment_date": "date",
       "amount": "amount",
-      "payment_method": "(SELECT name FROM account_payment_method WHERE account_payment_method.id = account_payment.payment_method_id)",
+      "payment_method": "(SELECT name FROM payment_method WHERE payment_method.id = account_payment.payment_method_id)",
       "reference": "payment_reference",
       "source_system": "'odoo'",
       "source_id": "id"
@@ -136,25 +138,25 @@
     "source_table": "ir_logging",
     "where_clause": null,
     "field_mapping": {
-      "entity_type": "'audit_result'",
-      "entity_id": "id",
+      "entity_type": "type",
+      "entity_id": "path",
       "rule_name": "func",
       "risk_level": "level",
       "issue_detected": "message",
-      "recommendation": "NULL",
-      "ai_confidence": "NULL"
+      "recommendation": "'Review the logged issue'",
+      "ai_confidence": "1.0"
     }
   },
   "audit_logs": {
     "source_table": "ir_logging",
     "where_clause": null,
     "field_mapping": {
-      "entity_type": "'audit_log'",
-      "entity_id": "id",
+      "entity_type": "type",
+      "entity_id": "path",
       "action": "func",
       "details": "message",
-      "average_score": "NULL",
-      "ai_score": "NULL",
+      "average_score": "0.0",
+      "ai_score": "1.0",
       "risk_level": "level"
     }
   },
@@ -182,7 +184,7 @@
       "description": "name",
       "quantity": "product_qty",
       "unit_price": "price_unit",
-      "tax_id": "(SELECT account_tax_id FROM account_tax_purchase_order_line_rel WHERE account_tax_purchase_order_line_rel.purchase_order_line_id = purchase_order_line.id LIMIT 1)",
+      "tax_id": "(SELECT account_tax_id FROM account_tax_purchase_order_line_rel WHERE purchase_order_line_id = purchase_order_line.id LIMIT 1)",
       "subtotal": "price_subtotal"
     }
   },
@@ -205,7 +207,7 @@
       "supplier_id": "partner_id",
       "product_id": "product_id",
       "change_quantity": "product_qty",
-      "change_type": "CASE WHEN is_in THEN 'in' WHEN is_out THEN 'out' ELSE 'other' END",
+      "change_type": "state",
       "timestamp": "date",
       "source_system": "'odoo'",
       "source_id": "id"

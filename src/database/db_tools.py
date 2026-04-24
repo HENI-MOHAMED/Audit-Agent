@@ -176,7 +176,7 @@ def write_local_db(query: str) -> str:
         print(f"Error writing to local database: {e}")
         return json.dumps({"error": str(e)})
 @tool
-def import_file_to_local_db(file_path: str, mapping: dict):
+def import_file_to_local_db(file_path: str, mapping: dict, transformations: dict = None):
     """
     Reads a CSV or XLSX file and inserts its contents into the local database
     using a provided JSON mapping.
@@ -184,10 +184,18 @@ def import_file_to_local_db(file_path: str, mapping: dict):
     The mapping format should be:
     {
       "canonical_table_name": {
+        "where_clause": "pandas query string if needed to filter rows, else null",
         "field_mapping": {
           "canonical_column": "file_column_name",
           "another_canonical": "'hardcoded_value'"
         }
+      }
+    }
+
+    The transformations format (optional) should be:
+    {
+      "canonical_table_name": {
+        "canonical_column": "python expression string using 'x' as the variable, e.g., \"str(x).replace('noise', '')\" or \"pd.to_datetime(x, format='%Y%m%d').strftime('%Y-%m-%d')\""
       }
     }
     """
@@ -195,10 +203,15 @@ def import_file_to_local_db(file_path: str, mapping: dict):
     import sqlite3
     import os
     import json
+    import re
 
     print(f"Reading file: {file_path}")
     if file_path.lower().endswith('.csv'):
-        df = pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            print("UTF-8 decoding failed, falling back to latin1 encoding.")
+            df = pd.read_csv(file_path, encoding='latin1')
     elif file_path.lower().endswith(('.xls', '.xlsx')):
         df = pd.read_excel(file_path)
     else:
@@ -208,16 +221,40 @@ def import_file_to_local_db(file_path: str, mapping: dict):
     conn = sqlite3.connect(db_path, timeout=30)
     cursor = conn.cursor()
 
+    transformations = transformations or {}
+
     for canonical_table, config in mapping.items():
         field_map = config.get("field_mapping", {})
+        where_clause = config.get("where_clause", None)
+        table_transformations = transformations.get(canonical_table, {})
+
         if not field_map:
             print(f"Skipping {canonical_table}: no valid field mappings found.")
             continue
+            
+        cursor.execute(f"PRAGMA table_info({canonical_table})")
+        valid_columns = [row[1] for row in cursor.fetchall()]
+        if not valid_columns:
+            print(f"Skipping {canonical_table}: table does not exist.")
+            continue
+            
+        field_map = {k: v for k, v in field_map.items() if k in valid_columns}
+        if not field_map:
+            print(f"Skipping {canonical_table}: no valid field mappings found after checking schema.")
+            continue
+
+        table_df = df
+        if where_clause:
+            try:
+                table_df = table_df.query(where_clause)
+            except Exception as e:
+                print(f"Error applying where_clause '{where_clause}' to dataframe: {e}")
+                continue
 
         columns = list(field_map.keys())
         batch = []
 
-        for _, row in df.iterrows():
+        for _, row in table_df.iterrows():
             values = []
             for c_field in columns:
                 s_field = field_map[c_field]
@@ -230,7 +267,17 @@ def import_file_to_local_db(file_path: str, mapping: dict):
                     # Convert pandas NaT or NaN to None for SQLite
                     if pd.isna(val):
                         val = None
-                        
+                
+                # Apply transformation if specified for this column
+                if c_field in table_transformations and val is not None:
+                    transform_expr = table_transformations[c_field]
+                    try:
+                        # Evaluate the transformation expression with 'x' being the current value
+                        new_val = eval(transform_expr, {"__builtins__": __builtins__}, {"x": val, "re": re, "pd": pd, "str": str, "int": int, "float": float})
+                        val = None if pd.isna(new_val) else new_val
+                    except Exception as e:
+                        print(f"Error applying transformation '{transform_expr}' on value '{val}' for column '{c_field}': {e}")
+
                 # SQLite can't bind dict/list - serialize to JSON string
                 if isinstance(val, (dict, list)):
                     val = json.dumps(val, ensure_ascii=False)

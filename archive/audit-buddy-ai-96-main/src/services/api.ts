@@ -251,3 +251,49 @@ export const deleteInventoryLog = (id: number) =>
   request<{ ok: boolean; error?: string }>(`/inventory_logs/${id}`, {
     method: "DELETE",
   });
+
+// ── Full Report ──
+export interface FullReportSummary {
+  latest_month: string;
+  total_revenue: number;
+  total_cogs: number;
+  total_expenses: number;
+  net_profit: number;
+  avg_gross_margin: number;
+  avg_dso_days: number;
+  total_invoice_count: number;
+  avg_unique_customers: number;
+  top1_customer_pct: number;
+  overdue_ratio: number;
+  months_of_data: number;
+}
+
+export interface FullReportPredictions {
+  random_forest: { accuracy_percent: number; predictions: number[] };
+  xgboost: { accuracy_percent: number; predictions: number[] };
+}
+
+export interface FlaggedInvoice {
+  id: number;
+  invoice_number: string | null;
+  supplier_name: string | null;
+  type: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  total_amount: number | null;
+  status: string | null;
+}
+
+export interface FullReportData {
+  summary: FullReportSummary;
+  features: Record<string, unknown>[];
+  predictions: FullReportPredictions;
+  last_month: string;
+  anomalies: { flagged_ids: number[]; flagged_invoices: FlaggedInvoice[] };
+  generated_at: string;
+  features_error?: string;
+  predictions_error?: string;
+  anomalies_error?: string;
+}
+
+export const getFullReport = () => request<FullReportData>("/reports/full");

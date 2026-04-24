@@ -330,24 +330,6 @@ def build_feature_pipeline() -> pd.DataFrame:
 
 
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import xgboost as xgb
-
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-from xgboost import XGBClassifier
-
-sns.set_style("whitegrid")
-
-
-df = pd.read_csv("invoices.csv")
-
-df.head()
-
-
 
 
 
