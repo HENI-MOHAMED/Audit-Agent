@@ -7,13 +7,19 @@
       "out_refund": "out_refund"
     },
     "status": {
-      "posted": "not_paid"
+      "not_paid": "not_paid"
     }
   },
   "contacts": {
     "type": {
-      "contact": "customer",
       "customer": "customer"
+    }
+  },
+  "products": {
+    "type": {
+      "consu": "sell",
+      "service": "sell",
+      "combo": "sell"
     }
   },
   "purchase_orders": {
@@ -23,15 +29,34 @@
       "sent": "sent"
     }
   },
+  "audit_logs": {
+    "entity_type": {
+      "invoice": "invoice"
+    },
+    "action": {
+      "audit": "audit"
+    },
+    "risk_level": {
+      "high": "high"
+    }
+  },
+  "audit_results": {
+    "entity_type": {
+      "invoice": "invoice"
+    },
+    "rule_name": {
+      "supplier_authenticity": "supplier_authenticity",
+      "purchase_order_verification": "purchase_order_verification",
+      "inventory_order_verification": "inventory_order_verification",
+      "tax_verification": "tax_verification",
+      "payment_verification": "payment_verification",
+      "ai_review": "ai_review"
+    }
+  },
   "inventory_logs": {
     "change_type": {
-      "draft": "in",
-      "assigned": "in",
-      "done": "in",
-      "confirmed": "in",
-      "partially_available": "in",
-      "stock_in": "in",
-      "stock_out": "out"
+      "in": "in",
+      "out": "out"
     }
   }
 }

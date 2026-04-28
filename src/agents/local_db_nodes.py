@@ -649,6 +649,8 @@ IMPORTANT: You are STRICTLY FORBIDDEN from creating new tables or using any colu
 DATA INGESTION WORKFLOW
 --------------------------------------------------
 
+For the `products` table, use 'sell' as the default value for the `type` column. Only put 'buy' if the document explicitly indicates the company is buying the product to use rather than selling it to a customer.
+
 Always follow this order:
 
 1) Identify the company (vendor or issuer) and insert it.
@@ -869,6 +871,9 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
         "contacts": {
             "type": ["supplier", "customer"]
         },
+        "products": {
+            "type": ["sell", "buy"]
+        },
         "purchase_orders": {
             "status": ["purchase", "draft", "sent", "pending", "cancel", "cancelled", "rejected", "done"]
         },
@@ -1000,6 +1005,7 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
     target_columns = {
         "invoices": ["type", "status"],
         "contacts": ["type"],
+        "products": ["type"],
         "purchase_orders": ["status"],
         "audit_logs": ["entity_type", "action", "risk_level"],
         "audit_results": ["entity_type", "rule_name"],
@@ -1057,6 +1063,7 @@ Rules:
 4. Only use canonical values provided.
 5. If a value is already canonical, map it to itself.
 6. Ignore null or numeric values.
+7. For the products table 'type' column, use 'sell' as the default canonical value unless the source value explicitly indicates 'buy'.
 
 Return JSON only.
 

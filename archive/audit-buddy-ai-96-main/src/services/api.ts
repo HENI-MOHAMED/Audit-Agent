@@ -297,3 +297,28 @@ export interface FullReportData {
 }
 
 export const getFullReport = () => request<FullReportData>("/reports/full");
+
+// ── Supplier Requests Pending Data API ──
+export async function getPendingSuppliers() {
+  return request<any[]>('/supplier-requests/suppliers');
+}
+export async function confirmSupplierRequest(id: number) {
+  return request<any>(`/supplier-requests/suppliers/${id}/confirm`, { method: 'POST' });
+}
+
+export async function getPendingProducts() {
+  return request<any[]>('/supplier-requests/products');
+}
+export async function confirmProductRequest(id: number) {
+  return request<any>(`/supplier-requests/products/${id}/confirm`, { method: 'POST' });
+}
+
+export async function getPendingInvoices() {
+  return request<any[]>('/supplier-requests/invoices');
+}
+export async function confirmInvoiceRequest(id: number, assigned_supplier_id: number, line_mappings: Record<string, number>) {
+  return request<any>(`/supplier-requests/invoices/${id}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ assigned_supplier_id, line_mappings })
+  });
+}

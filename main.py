@@ -163,6 +163,12 @@ all_tools = base_tools + [call_retriever_agent, call_calculation_agent, call_aud
 #                        └─ "exit"     → exit_agent → END
 
 
+def scan_invoices_node(state: AgentState) -> AgentState:
+    """Wrapper node for simple extraction without verification."""
+    # This runs the standard audit_agent which parses docs and updates state["invoces"]
+    return audit_agent(state)
+
+
 def router_node(state: AgentState) -> AgentState:
     """Pass-through node that sets up state for routing.
     The actual routing is done by the conditional edge reading state['route'].
@@ -176,6 +182,7 @@ def _route_by_field(state: AgentState) -> str:
     route_map = {
         "chat": "main_ai_node",
         "audit": "audit_agent",
+        "scan_invoice": "scan_invoices_node",
         "local_db": "local_db",
         "terminology": "local_db_terminology_node",
         "upload": "local_db_agent",
@@ -213,6 +220,7 @@ graph.add_node("exit_agent", exit_agent)
 graph.add_node("process_emails_agent", process_emails_agent)
 graph.add_node("ai_verification_node", ai_review_node)
 graph.add_node("finalize_node", finalize_node)
+graph.add_node("scan_invoices_node", scan_invoices_node)
 
 # START → router
 graph.add_edge(START, "router_node")
@@ -224,6 +232,7 @@ graph.add_conditional_edges(
     {
         "main_ai_node": "main_ai_node",
         "audit_agent": "audit_agent",
+        "scan_invoices_node": "scan_invoices_node",
         "local_db": "local_db",
         "local_db_terminology_node": "local_db_terminology_node",
         "local_db_agent": "local_db_agent",
@@ -240,6 +249,9 @@ graph.add_conditional_edges(
 )
 graph.add_edge("tools_node", "main_ai_node")
 
+# ── Scan invoices branch: standalone → END
+graph.add_edge("scan_invoices_node", END)
+
 # ── Audit branch: linear pipeline → END
 graph.add_edge("audit_agent", "supplier_verification_node")
 graph.add_edge("supplier_verification_node", "purchase_order_verification_node")
@@ -247,7 +259,6 @@ graph.add_edge("purchase_order_verification_node", "inventory_order_verification
 graph.add_edge("inventory_order_verification_node", "tax_verification_node")
 graph.add_edge("tax_verification_node", "payment_verification_node")
 graph.add_edge("payment_verification_node", "ai_verification_node")
-
 graph.add_edge("ai_verification_node", "finalize_node")
 graph.add_edge("finalize_node", END)
 

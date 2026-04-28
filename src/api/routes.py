@@ -7,6 +7,8 @@ import sqlite3
 import os
 import uuid
 import traceback
+import shutil
+import re
 from dotenv import load_dotenv
 
 from src.api.models import AgentState
@@ -1047,3 +1049,461 @@ def get_dashboard_predictions():
         import traceback
         traceback.print_exc()
         return {"error": str(e), "profit_prediction": [], "predicted_cash_flow_risk": [], "predicted_findings_by_risk": []}
+
+from src.tools.document_tools import scan_documents
+from langchain_core.messages import SystemMessage, HumanMessage
+from src.utils.config import helper_llm_json
+
+@router.post("/invoice/extract")
+async def extract_invoice(file: UploadFile = File(...)):
+    # 1. Save uploaded file temporarily
+    temp_dir = os.path.join(os.path.dirname(__file__), "../../data/uploads")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, file.filename)
+    
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        from main import app as graph_app
+        import uuid
+        
+        thread_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        initial_state = {
+            "messages": [],
+            "user_input": f"Path of the invoice to analyze: {temp_path}",
+            "route": "scan_invoice",
+            "company_info": {"company_name": "Our Company"},
+            "invoces": []
+        }
+        
+        final_state = graph_app.invoke(initial_state, config)
+        
+        invoices = final_state.get("invoces", [])
+        if invoices and len(invoices) > 0:
+            invoice_obj = invoices[-1]
+            return {
+                "supplier_name": invoice_obj.invoice_data.get("supplier_name"),
+                "invoice_number": invoice_obj.invoice_number,
+                "amount": invoice_obj.invoice_data.get("amount"),
+                "currency": invoice_obj.invoice_data.get("currency"),
+                "creation_date": invoice_obj.invoice_data.get("creation_date"),
+                "products": [{"product_name": p, "quantity": q, "price": pr} 
+                             for p, q, pr in zip(
+                                 invoice_obj.invoice_data.get("product_name", []),
+                                 invoice_obj.invoice_data.get("quantity", []),
+                                 invoice_obj.invoice_data.get("price", [])
+                             )]
+            }
+            
+        return {"error": "Failed to extract invoice data", "raw": str(final_state)}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+    finally:
+        # Optional: cleanup or keep for records
+        pass
+
+@router.get("/suppliers")
+async def get_suppliers():
+    # Mock data for now, or point to db
+    return [
+       {"id": "1", "name": "Acme Corp"},
+       {"id": "2", "name": "Global Supplies"},
+    ]
+
+@router.get("/purchase-orders")
+async def get_purchase_orders():
+    # Mock data
+    return [
+       {"id": "PO-101", "desc": "PO-101 (Laptops)"},
+       {"id": "PO-102", "desc": "PO-102 (Office Chairs)"},
+    ]
+
+class NewSupplierCreateRequest(BaseModel):
+    name: str
+    tax_number: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+@router.post("/new_supplier")
+async def create_new_supplier(req: NewSupplierCreateRequest):
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS new_supplier (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE,
+                tax_number TEXT,
+                email TEXT,
+                phone TEXT,
+                address TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            INSERT INTO new_supplier (name, tax_number, email, phone, address)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (req.name, req.tax_number, req.email, req.phone, req.address))
+        
+        conn.commit()
+        return {
+            "status": "success",
+            "message": "Supplier created successfully",
+            "data": {
+                "id": cursor.lastrowid,
+                "name": req.name,
+                "tax_number": req.tax_number,
+                "email": req.email,
+                "phone": req.phone,
+                "address": req.address
+            }
+        }
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+class NewProductCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    price: str | float | None = None
+    type: str | None = None
+
+@router.post("/new_products")
+async def create_new_product(req: NewProductCreateRequest):
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS new_products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE,
+                description TEXT,
+                price TEXT,
+                type TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            INSERT INTO new_products (name, description, price, type)
+            VALUES (?, ?, ?, ?)
+        ''', (req.name, req.description, str(req.price) if req.price else None, req.type))
+        
+        conn.commit()
+        return {
+            "status": "success",
+            "message": "Product created successfully",
+            "data": {
+                "id": cursor.lastrowid,
+                "name": req.name,
+                "description": req.description,
+                "price": req.price,
+                "type": req.type
+            }
+        }
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+class ReceivedInvoiceRequest(BaseModel):
+    supplier_name: str | None = None
+    invoice_number: str | None = None
+    creation_date: str | None = None
+    amount: str | float | None = None
+    currency: str | None = None
+    products: list | None = None
+    entry_mode: str | None = None
+
+@router.post("/invoice/receive")
+async def receive_invoice(req: ReceivedInvoiceRequest):
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Create table if not exists with detailed info
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS received_invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                supplier_name TEXT,
+                invoice_number TEXT,
+                creation_date TEXT,
+                amount TEXT,
+                currency TEXT,
+                products TEXT,
+                entry_mode TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS supplier_invoice_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_id INTEGER,
+                product_id TEXT,
+                description TEXT,
+                quantity TEXT,
+                unit_price TEXT,
+                tax_id TEXT,
+                subtotal TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (invoice_id) REFERENCES received_invoices(id)
+            )
+        ''')
+        
+        products_json = json.dumps(req.products) if req.products else "[]"
+        
+        cursor.execute('''
+            INSERT INTO received_invoices 
+            (supplier_name, invoice_number, creation_date, amount, currency, products, entry_mode) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (req.supplier_name, req.invoice_number, req.creation_date, str(req.amount), req.currency, products_json, req.entry_mode))
+        
+        invoice_id = cursor.lastrowid
+
+        if req.products:
+            for product in req.products:
+                if isinstance(product, dict):
+                    cursor.execute('''
+                        INSERT INTO supplier_invoice_lines 
+                        (invoice_id, product_id, description, quantity, unit_price, tax_id, subtotal) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        invoice_id, 
+                        product.get('product_id'), 
+                        product.get('description') or product.get('product_name'), 
+                        str(product.get('quantity')), 
+                        str(product.get('unit_price') or product.get('price')), 
+                        product.get('tax_id'), 
+                        str(product.get('subtotal'))
+                    ))
+
+        conn.commit()
+        return {"status": "success", "message": "Invoice received successfully", "id": invoice_id}
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# ─── SUPPLIER REQUESTS LISTING (GET) ───
+@router.get("/supplier-requests/suppliers")
+async def get_pending_suppliers():
+    try:
+        conn = sqlite3.connect(_DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM new_supplier ORDER BY created_at DESC")
+        data = [dict(row) for row in c.fetchall()]
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@router.get("/supplier-requests/products")
+async def get_pending_products():
+    try:
+        conn = sqlite3.connect(_DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM new_products ORDER BY created_at DESC")
+        data = [dict(row) for row in c.fetchall()]
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@router.get("/supplier-requests/invoices")
+async def get_pending_invoices():
+    try:
+        conn = sqlite3.connect(_DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        # Query headers
+        c.execute("SELECT * FROM received_invoices ORDER BY created_at DESC")
+        invoices = [dict(row) for row in c.fetchall()]
+        
+        # Query lines and attach
+        c.execute("SELECT * FROM supplier_invoice_lines")
+        lines_data = [dict(row) for row in c.fetchall()]
+        
+        # Group lines
+        lines_by_invoice = {}
+        for line in lines_data:
+            inv_id = line.get('invoice_id')
+            if inv_id not in lines_by_invoice:
+                lines_by_invoice[inv_id] = []
+            lines_by_invoice[inv_id].append(line)
+            
+        for inv in invoices:
+            inv['lines'] = lines_by_invoice.get(inv['id'], [])
+            
+        return invoices
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# ─── SUPPLIER REQUESTS APPROVAL (POST) ───
+from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
+
+class InvoiceConfirmRequest(BaseModel):
+    assigned_supplier_id: int
+    line_mappings: Dict[str, int] # mapping from original string line ID to permanent product_id
+
+@router.post("/supplier-requests/suppliers/{id}/confirm")
+async def confirm_supplier_request(id: int):
+    try:
+        conn = sqlite3.connect(_DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # 1. Fetch
+        c.execute("SELECT * FROM new_supplier WHERE id = ?", (id,))
+        supplier = c.fetchone()
+        if not supplier:
+            return {"error": "Pending supplier not found."}
+            
+        # 2. Insert into contacts
+        c.execute('''
+            INSERT INTO contacts (name, type, tax_number, email, phone, address, created_at)
+            VALUES (?, 'supplier', ?, ?, ?, ?, ?)
+        ''', (supplier['name'], supplier['tax_number'], supplier['email'], supplier['phone'], supplier['address'], supplier['created_at']))
+        new_id = c.lastrowid
+        
+        # 3. Delete from staging
+        c.execute("DELETE FROM new_supplier WHERE id = ?", (id,))
+        conn.commit()
+        return {"status": "success", "new_id": new_id}
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        return {"error": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@router.post("/supplier-requests/products/{id}/confirm")
+async def confirm_product_request(id: int):
+    try:
+        conn = sqlite3.connect(_DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        c.execute("SELECT * FROM new_products WHERE id = ?", (id,))
+        prod = c.fetchone()
+        if not prod:
+            return {"error": "Pending product not found."}
+            
+        # Parse price
+        price = 0.0
+        try:
+            if prod['price']:
+                price = float(str(prod['price']).replace(',', '').strip())
+        except:
+            pass
+            
+        c.execute('''
+            INSERT INTO products (name, description, price, type, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (prod['name'], prod['description'], price, prod['type'], prod['created_at']))
+        
+        c.execute("DELETE FROM new_products WHERE id = ?", (id,))
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        return {"error": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@router.post("/supplier-requests/invoices/{id}/confirm")
+async def confirm_invoice_request(id: int, requestBody: InvoiceConfirmRequest):
+    try:
+        conn = sqlite3.connect(_DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # 1. Fetch
+        c.execute("SELECT * FROM received_invoices WHERE id = ?", (id,))
+        invoice = c.fetchone()
+        if not invoice:
+            return {"error": "Pending invoice not found."}
+            
+        # 2. Get permanent supplier
+        c.execute("SELECT id, name FROM contacts WHERE id = ?", (requestBody.assigned_supplier_id,))
+        supplier_contact = c.fetchone()
+        if not supplier_contact:
+            return {"error": "Assigned permanent supplier not found."}
+            
+        # 3. Insert invoice
+        amount = 0.0
+        try:
+             amount = float(invoice['amount']) if invoice['amount'] else 0.0
+        except:
+             pass
+             
+        c.execute('''
+            INSERT INTO invoices (supplier_id, supplier_name, invoice_number, type, currency, invoice_date, total_amount, status, created_at)
+            VALUES (?, ?, ?, 'received', ?, ?, ?, 'draft', ?)
+        ''', (supplier_contact['id'], supplier_contact['name'], invoice['invoice_number'], invoice['currency'], invoice['creation_date'], amount, invoice['created_at']))
+        
+        new_inv_id = c.lastrowid
+        
+        # 4. Insert lines
+        c.execute("SELECT * FROM supplier_invoice_lines WHERE invoice_id = ?", (id,))
+        lines = c.fetchall()
+        for line in lines:
+            line_id_str = str(line['id'])
+            mapped_product_id = requestBody.line_mappings.get(line_id_str)
+            qty = 0.0
+            price = 0.0
+            try:
+                qty = float(line['quantity']) if line['quantity'] else 0.0
+                price = float(line['unit_price']) if line['unit_price'] else 0.0
+            except:
+                pass
+                
+            c.execute('''
+                INSERT INTO invoice_lines (invoice_id, product_id, description, quantity, unit_price, subtotal)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (new_inv_id, mapped_product_id, line['description'], qty, price, qty * price))
+            
+        # 5. Cleanup
+        c.execute("DELETE FROM supplier_invoice_lines WHERE invoice_id = ?", (id,))
+        c.execute("DELETE FROM received_invoices WHERE id = ?", (id,))
+        conn.commit()
+        return {"status": "success", "new_id": new_inv_id}
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        return {"error": str(e)}
+    finally:
+        if 'conn' in locals():
+            conn.close()

@@ -15,6 +15,7 @@ const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "AI Chat", url: "/chat", icon: MessageSquare },
   { title: "Run Audit", url: "/audit", icon: SearchIcon },
+  { title: "Supplier Requests", url: "/supplier-requests", icon: FileText },
   { title: "Invoices", url: "/invoices", icon: FileText },
   { title: "Suppliers", url: "/suppliers", icon: Users },
   { title: "Products", url: "/products", icon: Package },
@@ -33,6 +34,9 @@ const systemItems = [
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  
+  const userRole = localStorage.getItem("userRole");
+  const isSupplier = userRole === "supplier";
 
   const renderItems = (items: typeof mainItems) =>
     items.map((item) => (
@@ -50,6 +54,36 @@ export function AppSidebar() {
         </SidebarMenuButton>
       </SidebarMenuItem>
     ));
+
+  if (isSupplier) {
+    const supplierItems = [
+      { title: "Supplier Portal", url: "/supplier-portal", icon: LayoutDashboard }
+    ];
+    return (
+      <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+        <SidebarContent>
+          <div className="p-4 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+              <Shield className="h-4 w-4 text-primary-foreground" />
+            </div>
+            {!collapsed && (
+              <div>
+                <h1 className="text-sm font-semibold text-sidebar-accent-foreground">AuditAI</h1>
+                <p className="text-xs text-sidebar-muted">Supplier Portal</p>
+              </div>
+            )}
+          </div>
+
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">Supplier Space</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>{renderItems(supplierItems)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </Sidebar>
+    );
+  }
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">

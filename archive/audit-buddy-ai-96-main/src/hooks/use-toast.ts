@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useNotificationStore } from "@/stores/notificationStore";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
@@ -136,6 +137,17 @@ type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
   const id = genId();
+
+  // Save to persistent notification center, stripping out any non-serializable React nodes
+  const serializableTitle = typeof props.title === 'string' ? props.title : "New Notification";
+  const serializableDescription = typeof props.description === 'string' ? props.description : undefined;
+
+  useNotificationStore.getState().addNotification({
+    id,
+    title: serializableTitle,
+    description: serializableDescription,
+    variant: props.variant as any, // Mapped locally
+  });
 
   const update = (props: ToasterToast) =>
     dispatch({

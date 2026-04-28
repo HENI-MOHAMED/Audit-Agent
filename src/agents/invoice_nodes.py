@@ -508,7 +508,7 @@ def purchase_order_verification_node(state: AgentState) -> AgentState:
                     FROM purchase_orders po
                     JOIN purchase_order_lines pol ON po.id = pol.purchase_order_id
                     WHERE pol.product_id = (
-                        SELECT id FROM products WHERE name = '{safe_product_name}'
+                        SELECT id FROM products WHERE name = '{safe_product_name}' AND type = 'buy'
                     )
                     AND po.contact_id = (SELECT id FROM contacts WHERE name = '{safe_suplier_name}' LIMIT 1);
                     """,
@@ -880,7 +880,7 @@ def inventory_order_verification_node(state: AgentState) -> AgentState:
                     FROM inventory inv
                     JOIN inventory_logs il ON inv.product_id = il.product_id
                     WHERE inv.product_id = (
-                        SELECT id FROM products WHERE name = '{safe_product_name}'
+                        SELECT id FROM products WHERE name = '{safe_product_name}' AND type = 'buy'
                     )
                     ORDER BY il.timestamp DESC;
                     """,
