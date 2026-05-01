@@ -100,3 +100,24 @@ export interface DashboardData {
   predicted_findings_by_risk: { category: string; count: number }[];
   recent_audit_results: AuditResultRow[];
 }
+
+export interface PurchaseOrderLineItemPayload {
+  product_id: number;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  tax_id?: number | null;
+  subtotal?: number | null;
+}
+
+export interface PurchaseOrderPayload {
+  contact_id: number;
+  company_id?: number | null;
+  order_number?: string | null;
+  order_date?: string | null;
+  due_date?: string | null;
+  total_amount?: number | null;
+  status: string;
+  source_system?: string;
+  lines: PurchaseOrderLineItemPayload[];
+}

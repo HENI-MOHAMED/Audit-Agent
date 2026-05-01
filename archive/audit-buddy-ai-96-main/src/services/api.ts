@@ -1,9 +1,14 @@
 const API_BASE = "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const role = localStorage.getItem("userRole") || "guest";
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { 
+      "Content-Type": "application/json",
+      "x-user-role": role,
+      ...(options?.headers || {})
+    },
   });
   if (!res.ok) {
     const text = await res.text();
@@ -320,5 +325,12 @@ export async function confirmInvoiceRequest(id: number, assigned_supplier_id: nu
   return request<any>(`/supplier-requests/invoices/${id}/confirm`, {
     method: 'POST',
     body: JSON.stringify({ assigned_supplier_id, line_mappings })
+  });
+}
+
+export async function createPurchaseOrder(payload: any) {
+  return request<any>('/purchase_orders', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 }

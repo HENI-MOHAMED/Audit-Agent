@@ -214,7 +214,7 @@ export default function SettingsPage() {
           ) : (
             <>
               <div className="space-y-2">
-                <Label className="text-sm">Email Address</Label>
+                <Label className="text-sm">Email_address that we are going to use for email and driver files retrieving</Label>
                 <Input
                   type="email"
                   value={emailAddress}
@@ -223,7 +223,7 @@ export default function SettingsPage() {
                   className="h-9 text-sm"
                 />
               </div>
-              <div className="space-y-2">
+              {/* <div className="space-y-2">
                 <Label className="text-sm">Email App Password</Label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -242,7 +242,7 @@ export default function SettingsPage() {
                     {showEmailPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
-              </div>
+              </div> */}
             </>
           )}
         </CardContent>

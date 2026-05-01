@@ -58,6 +58,10 @@ function sendMessage(payload: Record<string, unknown>): Promise<WSMessage> {
   });
 }
 
+export function executeSql(sql: string) {
+  return sendMessage({ action: "query", sql });
+}
+
 export function useDbTables() {
   const [tables, setTables] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);

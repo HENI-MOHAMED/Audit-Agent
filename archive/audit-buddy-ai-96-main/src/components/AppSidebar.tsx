@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FileText, Users, Package, Warehouse,
   ClipboardList, FolderOpen, BarChart3, Settings, Shield,
-  MessageSquare, Search as SearchIcon, Upload, Database
+  MessageSquare, Search as SearchIcon, Upload, Database, ShoppingCart
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -19,16 +19,17 @@ const mainItems = [
   { title: "Invoices", url: "/invoices", icon: FileText },
   { title: "Suppliers", url: "/suppliers", icon: Users },
   { title: "Products", url: "/products", icon: Package },
+  { title: "Place Order", url: "/place-order", icon: ShoppingCart },
   { title: "Inventory", url: "/inventory", icon: Warehouse },
 ];
 
 const systemItems = [
-  { title: "Audit Logs", url: "/audit-logs", icon: ClipboardList },
   { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Upload & Sync", url: "/upload", icon: Upload },
-  { title: "DB Explorer", url: "/db-explorer", icon: Database },
-  { title: "Reports", url: "/reports", icon: BarChart3 },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Audit Logs", url: "/audit-logs", icon: ClipboardList, adminOnly: true },
+  { title: "DB Explorer", url: "/db-explorer", icon: Database, adminOnly: true },
+  { title: "Reports", url: "/reports", icon: BarChart3, adminOnly: true },
+  { title: "Settings", url: "/settings", icon: Settings, adminOnly: true },
 ];
 
 export function AppSidebar() {
@@ -37,10 +38,13 @@ export function AppSidebar() {
   
   const userRole = localStorage.getItem("userRole");
   const isSupplier = userRole === "supplier";
+  const isAdmin = userRole === "admin";
 
-  const renderItems = (items: typeof mainItems) =>
-    items.map((item) => (
-      <SidebarMenuItem key={item.title}>
+  const renderItems = (items: any[]) =>
+    items
+      .filter((item) => !item.adminOnly || isAdmin)
+      .map((item) => (
+        <SidebarMenuItem key={item.title}>
         <SidebarMenuButton asChild>
           <NavLink
             to={item.url}

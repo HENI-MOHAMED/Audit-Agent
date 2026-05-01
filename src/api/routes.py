@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, HTTPException, Depends
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 import asyncio
@@ -17,6 +17,14 @@ from src.utils.stream_utils import StreamEmitter, set_emitter
 load_dotenv()
 
 router = APIRouter()
+
+def verify_admin(x_user_role: str | None = Header(None)):
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+
+def verify_employee_or_admin(x_user_role: str | None = Header(None)):
+    if x_user_role not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="Employee or Admin privileges required")
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/ai_audit_db.sqlite")
 
@@ -88,12 +96,12 @@ class GlobalConfigRequest(BaseModel):
     odoo_db_password: str | None = None
 
 
-@router.get("/config")
+@router.get("/config", dependencies=[Depends(verify_admin)])
 async def get_config():
     return _global_config
 
 
-@router.put("/config")
+@router.put("/config", dependencies=[Depends(verify_admin)])
 async def update_config(req: GlobalConfigRequest):
     if req.db_source is not None:
         _global_config["db_source"] = req.db_source
@@ -124,7 +132,7 @@ async def update_config(req: GlobalConfigRequest):
     return _global_config
 
 
-@router.get("/mapping")
+@router.get("/mapping", dependencies=[Depends(verify_admin)])
 async def get_mapping():
     """Return the Odoo database mapping configuration if it exists."""
     mapping_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/mapping_cache.json")
@@ -138,7 +146,7 @@ async def get_mapping():
         return {"mapping": None, "db_source": _global_config.get("db_source"), "error": str(e)}
 
 
-@router.get("/odoo-schema")
+@router.get("/odoo-schema", dependencies=[Depends(verify_admin)])
 async def get_odoo_schema():
     """Return the extracted Odoo database schema (tables and columns) if it exists."""
     schema_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/odoo_schema.json")
@@ -156,7 +164,7 @@ class MappingUpdateRequest(BaseModel):
     mapping: dict
 
 
-@router.put("/mapping")
+@router.put("/mapping", dependencies=[Depends(verify_admin)])
 async def update_mapping(req: MappingUpdateRequest):
     """Save updated mapping configuration."""
     mapping_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/mapping_cache.json")
@@ -293,6 +301,25 @@ class InventoryLogUpdateRequest(BaseModel):
     source_system: str | None = None
     timestamp: str | None = None
 
+class PurchaseOrderLineItem(BaseModel):
+    product_id: int
+    description: str | None = None
+    quantity: float
+    unit_price: float
+    tax_id: int | None = None
+    subtotal: float | None = None
+
+class PurchaseOrderCreateRequest(BaseModel):
+    contact_id: int
+    company_id: int | None = None
+    order_number: str | None = None
+    order_date: str | None = None
+    due_date: str | None = None
+    total_amount: float | None = None
+    status: str = "draft"
+    source_system: str | None = "manual"
+    lines: list[PurchaseOrderLineItem] = []
+
 # ═══════════════════════════════════════════════
 #  CONTACTS ENDPOINT
 # ═══════════════════════════════════════════════
@@ -344,7 +371,7 @@ async def update_contact(contact_id: int, req: ContactUpdateRequest):
         cursor.close()
         conn.close()
 
-@router.delete("/contacts/{contact_id}")
+@router.delete("/contacts/{contact_id}", dependencies=[Depends(verify_admin)])
 async def delete_contact(contact_id: int):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
     cursor = conn.cursor()
@@ -414,7 +441,7 @@ async def update_product(product_id: int, req: ProductUpdateRequest):
         cursor.close()
         conn.close()
 
-@router.delete("/products/{product_id}")
+@router.delete("/products/{product_id}", dependencies=[Depends(verify_admin)])
 async def delete_product(product_id: int):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
     cursor = conn.cursor()
@@ -483,7 +510,7 @@ async def update_inventory_log(log_id: int, req: InventoryLogUpdateRequest):
         cursor.close()
         conn.close()
 
-@router.delete("/inventory_logs/{log_id}")
+@router.delete("/inventory_logs/{log_id}", dependencies=[Depends(verify_admin)])
 async def delete_inventory_log(log_id: int):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
     cursor = conn.cursor()
@@ -700,6 +727,15 @@ def _execute_read_query(sql: str) -> list[dict]:
     conn.close()
     return rows
 
+def _execute_write_query(sql: str) -> int:
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    cursor.executescript(sql)
+    affected = cursor.rowcount
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return affected
 
 def _list_tables() -> list[str]:
     conn = sqlite3.connect(_DB_PATH, timeout=10)
@@ -819,13 +855,15 @@ async def db_websocket(ws: WebSocket):
                         await ws.send_json({"ok": False, "error": "Missing 'sql' field"})
                         continue
 
+                    # If it's a SELECT, PRAGMA, or EXPLAIN query, return data rows
                     first_word = sql.split()[0].upper()
-                    if first_word not in ("SELECT", "PRAGMA", "EXPLAIN"):
-                        await ws.send_json({"ok": False, "error": "Only SELECT queries are allowed"})
-                        continue
-
-                    rows = await asyncio.to_thread(_execute_read_query, sql)
-                    await ws.send_json({"ok": True, "data": rows, "count": len(rows)})
+                    if first_word in ("SELECT", "PRAGMA", "EXPLAIN"):
+                        rows = await asyncio.to_thread(_execute_read_query, sql)
+                        await ws.send_json({"ok": True, "data": rows, "count": len(rows)})
+                    else:
+                        # DDL/DML, requires execute write 
+                        affected = await asyncio.to_thread(_execute_write_query, sql)
+                        await ws.send_json({"ok": True, "data": [], "count": affected})
 
                 else:
                     await ws.send_json({"ok": False, "error": f"Unknown action: {action}"})
@@ -1507,3 +1545,51 @@ async def confirm_invoice_request(id: int, requestBody: InvoiceConfirmRequest):
     finally:
         if 'conn' in locals():
             conn.close()
+
+# ═══════════════════════════════════════════════
+#  PURCHASE ORDERS ENDPOINTS
+# ═══════════════════════════════════════════════
+
+@router.post("/purchase_orders")
+async def create_purchase_order(req: PurchaseOrderCreateRequest):
+    conn = sqlite3.connect(_DB_PATH, timeout=10)
+    cursor = conn.cursor()
+    try:
+        # Generate an order number if none is provided
+        order_number = req.order_number
+        if not order_number:
+            cursor.execute("SELECT COUNT(*) FROM purchase_orders")
+            count = cursor.fetchone()[0]
+            order_number = f"PO-{count + 1:04d}"
+
+        cursor.execute("""
+            INSERT INTO purchase_orders (
+                company_id, contact_id, order_number, order_date, 
+                due_date, total_amount, status, source_system
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (req.company_id, req.contact_id, order_number, req.order_date,
+              req.due_date, req.total_amount, req.status, req.source_system))
+        
+        po_id = cursor.lastrowid
+        
+        # Insert lines
+        for line in req.lines:
+            subtotal = line.subtotal if line.subtotal is not None else (line.quantity * line.unit_price)
+            cursor.execute("""
+                INSERT INTO purchase_order_lines (
+                    purchase_order_id, product_id, description, 
+                    quantity, unit_price, tax_id, subtotal
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (po_id, line.product_id, line.description, 
+                  line.quantity, line.unit_price, line.tax_id, subtotal))
+            
+        conn.commit()
+        return {"ok": True, "id": po_id, "order_number": order_number}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        cursor.close()
+        conn.close()

@@ -1,0 +1,121 @@
+"""One-time script to replace insecure auth in routes.py with Firebase-backed auth."""
+
+def apply():
+    with open("src/api/routes.py", "r") as f:
+        routes = f.read()
+
+    old_block = (
+        "from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, HTTPException, Depends\n"
+        "from pydantic import BaseModel\n"
+        "from langchain_core.messages import HumanMessage\n"
+        "import asyncio\n"
+        "import json\n"
+        "import sqlite3\n"
+        "import os\n"
+        "import uuid\n"
+        "import traceback\n"
+        "import shutil\n"
+        "import re\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "from src.api.models import AgentState\n"
+        "from src.utils.stream_utils import StreamEmitter, set_emitter\n"
+        "\n"
+        "load_dotenv()\n"
+        "\n"
+        "router = APIRouter()\n"
+        "\n"
+        "def verify_admin(x_user_role: str | None = Header(None)):\n"
+        "    if x_user_role != \"admin\":\n"
+        "        raise HTTPException(status_code=403, detail=\"Admin privileges required\")\n"
+        "\n"
+        "def verify_employee_or_admin(x_user_role: str | None = Header(None)):\n"
+        "    if x_user_role not in [\"admin\", \"employee\"]:\n"
+        "        raise HTTPException(status_code=403, detail=\"Employee or Admin privileges required\")"
+    )
+
+    new_block = (
+        "from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, HTTPException, Depends, Request\n"
+        "from pydantic import BaseModel\n"
+        "from langchain_core.messages import HumanMessage\n"
+        "import asyncio\n"
+        "import json\n"
+        "import sqlite3\n"
+        "import os\n"
+        "import uuid\n"
+        "import traceback\n"
+        "import shutil\n"
+        "import re\n"
+        "from dotenv import load_dotenv\n"
+        "\n"
+        "from src.api.models import AgentState\n"
+        "from src.utils.stream_utils import StreamEmitter, set_emitter\n"
+        "from src.utils.firebase_admin_utils import verify_id_token\n"
+        "\n"
+        "load_dotenv()\n"
+        "\n"
+        "router = APIRouter()\n"
+        "\n"
+        "# ================================================================\n"
+        "#  SECURE AUTH DEPENDENCIES (Firebase Custom Claims)\n"
+        "# ================================================================\n"
+        "\n"
+        "async def get_current_user(authorization: str | None = Header(None)) -> dict:\n"
+        "    \"\"\"Verify the Firebase ID token and return the decoded user claims.\n"
+        "\n"
+        "    Returns:\n"
+        "        dict with keys: uid, email, role (custom claim), etc.\n"
+        "\n"
+        "    Raises:\n"
+        "        HTTPException 401 if token is missing or invalid.\n"
+        "    \"\"\"\n"
+        "    if not authorization:\n"
+        "        raise HTTPException(status_code=401, detail=\"Missing Authorization header\")\n"
+        "\n"
+        "    # Extract Bearer token\n"
+        "    token = authorization.replace(\"Bearer \", \"\").strip()\n"
+        "    if not token or token == authorization:\n"
+        "        raise HTTPException(status_code=401, detail=\"Invalid Authorization header format. Use: Bearer <token>\")\n"
+        "\n"
+        "    try:\n"
+        "        decoded = verify_id_token(token)\n"
+        "        return decoded\n"
+        "    except ValueError as e:\n"
+        "        raise HTTPException(status_code=401, detail=f\"Invalid token: {str(e)}\")\n"
+        "    except Exception as e:\n"
+        "        raise HTTPException(status_code=401, detail=f\"Token verification failed: {str(e)}\")\n"
+        "\n"
+        "\n"
+        "def _require_role(*allowed_roles: str):\n"
+        "    \"\"\"Factory that creates a dependency requiring one of the given roles.\n"
+        "\n"
+        "    Must be used AFTER get_current_user in the dependency chain.\n"
+        "    \"\"\"\n"
+        "    async def checker(user: dict = Depends(get_current_user)) -> dict:\n"
+        "        user_role = user.get(\"role\")\n"
+        "        if user_role not in allowed_roles:\n"
+        "            raise HTTPException(\n"
+        "                status_code=403,\n"
+        "                detail=f\"Insufficient permissions. Required roles: {list(allowed_roles)}, got: {user_role}\"\n"
+        "            )\n"
+        "        return user\n"
+        "    return checker\n"
+        "\n"
+        "\n"
+        "# Convenience dependencies -- these REPLACE the old insecure functions\n"
+        "verify_admin = _require_role(\"admin\")\n"
+        "verify_employee_or_admin = _require_role(\"admin\", \"employee\")"
+    )
+
+    if old_block not in routes:
+        print("ERROR: Could not find the old auth block in routes.py")
+        return False
+
+    routes = routes.replace(old_block, new_block, 1)
+    with open("src/api/routes.py", "w") as f:
+        f.write(routes)
+    print("SUCCESS: routes.py updated with secure Firebase auth")
+    return True
+
+if __name__ == "__main__":
+    apply()

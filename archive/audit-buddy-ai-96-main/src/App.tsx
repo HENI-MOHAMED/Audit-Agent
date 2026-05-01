@@ -18,6 +18,7 @@ import DBExplorer from "@/pages/DBExplorer";
 import NotFound from "@/pages/NotFound";
 import LogIn from "@/pages/LogIn";
 import SupplierRequests from "@/pages/SupplierRequests";
+import PlaceOrder from "@/pages/PlaceOrder";
 
 import SupplierPortal from "@/pages/SupplierPortal";
 
@@ -66,7 +67,7 @@ const App = () => (
                 <Route path="/supplier-portal" element={<SupplierPortal />} />
               </Route>
 
-              {/* Admin/Employee Routes */}
+              {/* Admin/Employee/Customer Routes (Operational) */}
               <Route element={<RoleProtectedRoute allowedRoles={["admin", "employee", "customer"]} />}>
                 {/* Kept empty because their content is rendered persistently in DashboardLayout */}
                 <Route path="/chat" element={<></>} />
@@ -75,10 +76,15 @@ const App = () => (
                 <Route path="/supplier-requests" element={<SupplierRequests />} />
                 <Route path="/suppliers" element={<Suppliers />} />
                 <Route path="/products" element={<Products />} />
+                <Route path="/place-order" element={<PlaceOrder />} />
                 <Route path="/inventory" element={<Inventory />} />
-                <Route path="/audit-logs" element={<AuditLogs />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/upload" element={<Upload />} />
+              </Route>
+
+              {/* Admin-Only Routes (System/Sensitive) */}
+              <Route element={<RoleProtectedRoute allowedRoles={["admin"]} />}>
+                <Route path="/audit-logs" element={<AuditLogs />} />
                 <Route path="/db-explorer" element={<DBExplorer />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/settings" element={<Settings />} />

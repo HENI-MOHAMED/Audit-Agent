@@ -5,15 +5,21 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useDbTables, useDbSchema, useDbQuery } from "@/hooks/useWebSocketDB";
-import { Database, Search, Loader2, AlertTriangle, RefreshCw, Wand2 } from "lucide-react";
+import { useDbTables, useDbSchema, useDbQuery, executeSql } from "@/hooks/useWebSocketDB";
+import { Database, Search, Loader2, AlertTriangle, RefreshCw, Wand2, TerminalSquare } from "lucide-react";
 import { syncTerminology } from "@/services/api";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function DBExplorerPage() {
   const { tables, loading: tablesLoading, error: tablesError, refresh } = useDbTables();
   const [selectedTable, setSelectedTable] = useState("");
   const [customSql, setCustomSql] = useState("");
   const [activeSql, setActiveSql] = useState("");
+  
+  // DDL / Arbitrary script state
+  const [scriptSql, setScriptSql] = useState("");
+  const [scriptResult, setScriptResult] = useState<{ msg?: string; error?: string } | null>(null);
+  const [scriptRunning, setScriptRunning] = useState(false);
   const [terminologyLoading, setTerminologyLoading] = useState(false);
 
   const handleTerminologySync = async () => {
@@ -45,6 +51,25 @@ export default function DBExplorerPage() {
 
   const handleCustomQuery = () => {
     if (customSql.trim()) setActiveSql(customSql.trim());
+  };
+
+  const handleRunScript = async () => {
+    if (!scriptSql.trim()) return;
+    setScriptRunning(true);
+    setScriptResult(null);
+    try {
+      const res = await executeSql(scriptSql);
+      if (res.ok) {
+        setScriptResult({ msg: `Success! Rows affected: ${res.count ?? "unknown"}` });
+        refresh(); // Refresh tables in case it was a CREATE/DROP
+      } else {
+        setScriptResult({ error: (res as any).error || "Unknown error occurred" });
+      }
+    } catch (e: any) {
+      setScriptResult({ error: e.message });
+    } finally {
+      setScriptRunning(false);
+    }
   };
 
   const columns = data.length > 0 ? Object.keys(data[0] as Record<string, unknown>) : schema.map((s) => s.name);
@@ -145,7 +170,13 @@ export default function DBExplorerPage() {
 
           {/* Custom SQL */}
           <Card>
-            <CardContent className="pt-4">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                Query Data (SELECT)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -160,12 +191,46 @@ export default function DBExplorerPage() {
                   className="flex-1 font-mono text-sm h-10"
                 />
                 <Button type="submit" className="gap-2 h-10" disabled={!customSql.trim()}>
-                  <Search className="h-4 w-4" />
-                  Run
+                  Run Query
                 </Button>
               </form>
             </CardContent>
           </Card>
+
+          {/* DDL/DML Scripts */}
+          {selectedTable === "sqlite_sequence" && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <TerminalSquare className="h-4 w-4 text-muted-foreground" />
+                  Run SQL Script (CREATE / DELETE / UPDATE)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-2 space-y-3">
+                <Textarea
+                  value={scriptSql}
+                  onChange={(e) => setScriptSql(e.target.value)}
+                  placeholder="CREATE TABLE ...; or DROP TABLE ...;"
+                  className="font-mono text-sm min-h-[100px]"
+                />
+                <div className="flex items-center gap-4">
+                  <Button 
+                    onClick={handleRunScript} 
+                    disabled={!scriptSql.trim() || scriptRunning} 
+                    className="gap-2 h-9"
+                    variant="secondary"
+                  >
+                    {scriptRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Script"}
+                  </Button>
+                  {scriptResult && (
+                    <div className={`text-sm ${scriptResult.error ? "text-destructive" : "text-green-600"}`}>
+                      {scriptResult.error || scriptResult.msg}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Results */}
           {queryError && (
