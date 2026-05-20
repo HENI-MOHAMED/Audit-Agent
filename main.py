@@ -11,8 +11,8 @@ from src.api.models import invoice, AgentState
 from src.tools.document_tools import search_web, scan_documents, Retreave_from_email, Retreave_from_google_drive, Retreave_from_whatsapp
 from src.database.db_tools import retreave_information, store_data
 from src.agents.audit_agents import call_retriever_agent, call_audit_agent, call_calculation_agent, base_tools
-from src.agents.invoice_nodes import  finalize_node, supplier_verification_node, purchase_order_verification_node, inventory_order_verification_node, tax_verification_node, payment_verification_node, audit_agent, ai_review_node
-from src.agents.local_db_nodes import local_db, local_db_agent, local_db_terminology_agent, process_emails_agent
+from src.agents.invoice_nodes import  finalize_node, supplier_verification_node, purchase_order_verification_node, inventory_order_verification_node, tax_verification_node, payment_verification_node, scan_agent, ai_review_node
+from src.agents.local_db_nodes import local_db, local_db_agent, local_db_terminology_agent, process_emails_agent, canonical_desc
 
 load_dotenv()
 
@@ -39,9 +39,13 @@ You are the Main AI Agent – Tax and Audit Expert in Tunisia (Year: 2026).
 - web_search : only 3 times.
  -db_connector : only 5 time, so use it wisely to retreave all the information you need from the database about the company or depend on what you need.
 - retreave_information : only 5 time, so use it wisely to retreave all the information you need from the database about the company or depend on what you need. it take as input a query and the collection name to search in.
-        . query is the information you want to retreave  and the collection_name is the name of the collection, you have tow collections you can search in, the first one is 'audit_documets_better_embeddings' use it to retreave the information about the law in tunisia,
+        . query is the information you want to retreave  and the collection_name is the name of the collection, you have tow collections you can search in, the first one is 'audit_documents_better_embeddings' use it to retreave the information about the law in tunisia,
         . the second collection is 'past_conversations_summaries' use it to retreave the information from the past conversations with the user, this can help you to have more context about the company and the user needs.
-""" if state['thinking_mode'] == 'fast' else """ You coordinate helper agents and use tools when necessary.
+ DataBase Schema:
+ 
+ {canonical_desc}
+
+ """ if state['thinking_mode'] == 'fast' else f""" You coordinate helper agents and use tools when necessary.
 Available helper tools:
 - call_retriever_agent
 - call_calculation_agent
@@ -65,7 +69,8 @@ Do not repeat the same request unnecessarily.
 If sufficient information is available, provide the final answer.
 Always provide structured, professional responses."""}
 
-
+DataBase Schema:
+ {canonical_desc}
 
 Execution Control & Anti-Loop Rules:
 - Never call the same tool twice with the exact same query.
@@ -82,8 +87,7 @@ Execution Control & Anti-Loop Rules:
         main_llm = get_llm().bind_tools(all_tools)
         
     current_messages = list(state["messages"])
-    if not any(isinstance(msg, SystemMessage) for msg in current_messages):
-        current_messages.insert(0, _MAIN_SYSTEM_PROMPT)
+    current_messages.insert(0, _MAIN_SYSTEM_PROMPT)
         
     response = main_llm.invoke(current_messages)
     print(f" \n \n Main AI Agent Response: {response.content} \n \n")
@@ -157,7 +161,7 @@ all_tools = base_tools + [call_retriever_agent, call_calculation_agent, call_aud
 #  Set by the API layer before calling graph.invoke().
 #
 #  START → router_node ─┬─ "chat"     → main_ai_node ↔ tools_node → END
-#                        ├─ "audit"    → audit_agent → supplier → PO → inventory → tax → payment → END
+#                        ├─ "scan_invoice" → scan_agent → supplier → PO → inventory → tax → payment → END
 #                        ├─ "local_db" → local_db → local_db_terminology_node → END
 #                        ├─ "upload"   → local_db_agent → END
 #                        └─ "exit"     → exit_agent → END
@@ -165,8 +169,8 @@ all_tools = base_tools + [call_retriever_agent, call_calculation_agent, call_aud
 
 def scan_invoices_node(state: AgentState) -> AgentState:
     """Wrapper node for simple extraction without verification."""
-    # This runs the standard audit_agent which parses docs and updates state["invoces"]
-    return audit_agent(state)
+    # This runs the standard scan_agent which parses docs and updates state["invoces"]
+    return scan_agent(state)
 
 
 def router_node(state: AgentState) -> AgentState:
@@ -181,7 +185,7 @@ def _route_by_field(state: AgentState) -> str:
     route = state.get("route", "chat")
     route_map = {
         "chat": "main_ai_node",
-        "audit": "audit_agent",
+        "audit": "scan_agent",
         "scan_invoice": "scan_invoices_node",
         "local_db": "local_db",
         "terminology": "local_db_terminology_node",
@@ -207,7 +211,7 @@ graph = StateGraph(AgentState)
 graph.add_node("router_node", router_node)
 graph.add_node("main_ai_node", Main_AI)
 graph.add_node("tools_node", StreamingToolNode(tools=all_tools))
-graph.add_node("audit_agent", audit_agent)
+graph.add_node("scan_agent", scan_agent)
 graph.add_node("supplier_verification_node", supplier_verification_node)
 graph.add_node("purchase_order_verification_node", purchase_order_verification_node)
 graph.add_node("inventory_order_verification_node", inventory_order_verification_node)
@@ -231,7 +235,7 @@ graph.add_conditional_edges(
     _route_by_field,
     {
         "main_ai_node": "main_ai_node",
-        "audit_agent": "audit_agent",
+        "scan_agent": "scan_agent",
         "scan_invoices_node": "scan_invoices_node",
         "local_db": "local_db",
         "local_db_terminology_node": "local_db_terminology_node",
@@ -253,7 +257,7 @@ graph.add_edge("tools_node", "main_ai_node")
 graph.add_edge("scan_invoices_node", END)
 
 # ── Audit branch: linear pipeline → END
-graph.add_edge("audit_agent", "supplier_verification_node")
+graph.add_edge("scan_agent", "supplier_verification_node")
 graph.add_edge("supplier_verification_node", "purchase_order_verification_node")
 graph.add_edge("purchase_order_verification_node", "inventory_order_verification_node")
 graph.add_edge("inventory_order_verification_node", "tax_verification_node")
@@ -334,7 +338,7 @@ if __name__ == "__main__":
     cli_graph.add_node("main_ai_node", Main_AI)
     cli_graph.add_node("tools_node", StreamingToolNode(tools=all_tools))
     cli_graph.add_node("exit_agent", exit_agent)
-    cli_graph.add_node("audit_agent", audit_agent)
+    cli_graph.add_node("scan_agent", scan_agent)
     cli_graph.add_node("supplier_verification_node", supplier_verification_node)
     cli_graph.add_node("local_db", local_db)
     cli_graph.add_node("get_local_db_documents", _cli_get_local_db_documents)
@@ -355,7 +359,7 @@ if __name__ == "__main__":
         _cli_should_continue,
         {
             "main_ai_node": "main_ai_node",
-            "audit_node": "audit_agent",
+            "audit_node": "scan_agent",
             "local_db_node": "local_db",
             "upload_docs": "get_local_db_documents",
             "exit": "exit_agent",
@@ -363,7 +367,7 @@ if __name__ == "__main__":
     )
     cli_graph.add_edge("exit_agent", "user_input_node")
     cli_graph.add_edge("tools_node", "main_ai_node")
-    cli_graph.add_edge("audit_agent", "supplier_verification_node")
+    cli_graph.add_edge("scan_agent", "supplier_verification_node")
     cli_graph.add_edge("supplier_verification_node", "purchase_order_verification_node")
     cli_graph.add_edge("purchase_order_verification_node", "inventory_order_verification_node")
     cli_graph.add_edge("inventory_order_verification_node", "tax_verification_node")

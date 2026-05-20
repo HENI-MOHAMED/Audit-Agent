@@ -18,13 +18,52 @@ load_dotenv()
 
 router = APIRouter()
 
-def verify_admin(x_user_role: str | None = Header(None)):
-    if x_user_role != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
+from src.utils.firebase_admin_utils import verify_id_token
 
-def verify_employee_or_admin(x_user_role: str | None = Header(None)):
-    if x_user_role not in ["admin", "employee"]:
+def get_current_user(
+    authorization: str | None = Header(None),
+    x_user_role: str | None = Header(None),
+) -> dict | None:
+    """Extract and verify the Firebase ID token from the Authorization header.
+
+    Returns the decoded token dict on success, or None if no token is provided.
+    The caller (verify_admin / verify_employee_or_admin) is responsible for
+    raising the appropriate HTTPException.
+
+    If the Firebase token is valid but has no 'role' custom claim, the
+    optional X-User-Role header is used as a fallback. This allows the
+    frontend to pass the locally-selected role when Firebase custom claims
+    have not been set up yet.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        token = authorization.split("Bearer ")[1]
+        print(f"Verifying token: {token[:10]}... with X-User-Role: {x_user_role}")
+        decoded_token = verify_id_token(token)
+        # If the token has no 'role' claim, fall back to the X-User-Role header
+        if decoded_token.get("role") is None and x_user_role:
+            decoded_token["role"] = x_user_role
+        return decoded_token
+    except Exception as e:
+        print(f"Token verification failed: {e}")
+        return None
+
+def verify_admin(user: dict | None = Depends(get_current_user)):
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing Authorization header")
+    print(f"Verifying admin for user: {user.get('email', 'unknown')} with role: {user.get('role', 'unknown')}")
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return user
+
+def verify_employee_or_admin(user: dict | None = Depends(get_current_user)):
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing Authorization header")
+    print(f"Verifying employee or admin for user: {user.get('email', 'unknown')} with role: {user.get('role', 'unknown')}")
+    if user.get("role") not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="Employee or Admin privileges required")
+    return user
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/ai_audit_db.sqlite")
 
@@ -96,12 +135,12 @@ class GlobalConfigRequest(BaseModel):
     odoo_db_password: str | None = None
 
 
-@router.get("/config", dependencies=[Depends(verify_admin)])
+@router.get("/config")
 async def get_config():
     return _global_config
 
 
-@router.put("/config", dependencies=[Depends(verify_admin)])
+@router.put("/config")
 async def update_config(req: GlobalConfigRequest):
     if req.db_source is not None:
         _global_config["db_source"] = req.db_source
@@ -132,7 +171,7 @@ async def update_config(req: GlobalConfigRequest):
     return _global_config
 
 
-@router.get("/mapping", dependencies=[Depends(verify_admin)])
+@router.get("/mapping")
 async def get_mapping():
     """Return the Odoo database mapping configuration if it exists."""
     mapping_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/mapping_cache.json")
@@ -146,7 +185,7 @@ async def get_mapping():
         return {"mapping": None, "db_source": _global_config.get("db_source"), "error": str(e)}
 
 
-@router.get("/odoo-schema", dependencies=[Depends(verify_admin)])
+@router.get("/odoo-schema")
 async def get_odoo_schema():
     """Return the extracted Odoo database schema (tables and columns) if it exists."""
     schema_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/odoo_schema.json")
@@ -164,7 +203,7 @@ class MappingUpdateRequest(BaseModel):
     mapping: dict
 
 
-@router.put("/mapping", dependencies=[Depends(verify_admin)])
+@router.put("/mapping")
 async def update_mapping(req: MappingUpdateRequest):
     """Save updated mapping configuration."""
     mapping_path = os.path.join(os.path.dirname(__file__), "../../storage/json_configs/mapping_cache.json")
@@ -343,6 +382,7 @@ async def create_contact(req: ContactCreateRequest):
         cursor.close()
         conn.close()
 
+
 @router.put("/contacts/{contact_id}")
 async def update_contact(contact_id: int, req: ContactUpdateRequest):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
@@ -371,7 +411,7 @@ async def update_contact(contact_id: int, req: ContactUpdateRequest):
         cursor.close()
         conn.close()
 
-@router.delete("/contacts/{contact_id}", dependencies=[Depends(verify_admin)])
+@router.delete("/contacts/{contact_id}") #
 async def delete_contact(contact_id: int):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
     cursor = conn.cursor()
@@ -441,7 +481,7 @@ async def update_product(product_id: int, req: ProductUpdateRequest):
         cursor.close()
         conn.close()
 
-@router.delete("/products/{product_id}", dependencies=[Depends(verify_admin)])
+@router.delete("/products/{product_id}")
 async def delete_product(product_id: int):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
     cursor = conn.cursor()
@@ -510,7 +550,7 @@ async def update_inventory_log(log_id: int, req: InventoryLogUpdateRequest):
         cursor.close()
         conn.close()
 
-@router.delete("/inventory_logs/{log_id}", dependencies=[Depends(verify_admin)])
+@router.delete("/inventory_logs/{log_id}")
 async def delete_inventory_log(log_id: int):
     conn = sqlite3.connect(_DB_PATH, timeout=10)
     cursor = conn.cursor()

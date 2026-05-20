@@ -1,55 +1,22 @@
+from src.utils.tool_utils import _execute_tool_calls_parallel
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Annotated
 from langgraph.prebuilt import InjectedState
 
-from src.utils.config import get_helper_llm, MAX_TOOL_ITERATIONS, helper_llm_resoner
+from src.utils.config import get_helper_llm, MAX_TOOL_ITERATIONS, helper_llm_resoner, llm
 from src.tools.document_tools import search_web, scan_documents, Retreave_from_email, Retreave_from_google_drive, Retreave_from_whatsapp
 from src.database.db_tools import retreave_information, db_connector
 from src.api.models import AgentState
 from src.utils.stream_utils import get_emitter
+from src.agents.local_db_nodes import canonical_desc
 
 # ─── Base tools list (used internally by helper agents) ───
 base_tools = [search_web, retreave_information, scan_documents, Retreave_from_email, Retreave_from_google_drive, Retreave_from_whatsapp, db_connector]
 _base_tool_map = {t.name: t for t in base_tools}  # O(1) lookup
 
 
-def _execute_tool_calls_parallel(tool_calls: list, tool_map: dict, agent_name: str = "agent") -> list[ToolMessage]:
-    """Execute multiple tool calls in parallel using threads. Falls back to sequential for single calls."""
-    emitter = get_emitter()
-    if len(tool_calls) == 1:
-        tc = tool_calls[0]
-        if emitter: emitter.emit_agent_tool_call(agent_name, tc["name"], tc["args"])
-        tool_fn = tool_map.get(tc["name"])
-        if tool_fn is None:
-            err = f"Error: Unknown tool '{tc['name']}'"
-            if emitter: emitter.emit_agent_tool_result(agent_name, tc["name"], err)
-            return [ToolMessage(content=err, name=tc["name"], tool_call_id=tc["id"])]
-        result = tool_fn.invoke(tc["args"])
-        if emitter: emitter.emit_agent_tool_result(agent_name, tc["name"], str(result))
-        return [ToolMessage(content=str(result), name=tc["name"], tool_call_id=tc["id"])]
-
-    results = {}
-    def _run(tc):
-        if emitter: emitter.emit_agent_tool_call(agent_name, tc["name"], tc["args"])
-        tool_fn = tool_map.get(tc["name"])
-        if tool_fn is None:
-            err = f"Error: Unknown tool '{tc['name']}'"
-            if emitter: emitter.emit_agent_tool_result(agent_name, tc["name"], err)
-            return tc["id"], tc["name"], err
-        res = str(tool_fn.invoke(tc["args"]))
-        if emitter: emitter.emit_agent_tool_result(agent_name, tc["name"], res)
-        return tc["id"], tc["name"], res
-
-    with ThreadPoolExecutor(max_workers=min(len(tool_calls), 4)) as executor:
-        futures = {executor.submit(_run, tc): tc for tc in tool_calls}
-        for future in as_completed(futures):
-            tc_id, name, content = future.result()
-            results[tc_id] = (name, content)
-
-    # Return in original order
-    return [ToolMessage(content=results[tc["id"]][1], name=results[tc["id"]][0], tool_call_id=tc["id"]) for tc in tool_calls]
 
 
 # ─── Helper Agent: Retriever (as a tool) ───
@@ -108,7 +75,9 @@ Limits (tools credits):
 - Retreave_from_google_drive : only {"2" if state["thinking_mode"] == "thinking" else "4"} time, so use it wisely to retreave all the information you need from the google drive about the company or depend on what you need.
 - web_search : only {"2" if state["thinking_mode"] == "thinking" else "7"} times.
 - retreave_information : only {"2" if state["thinking_mode"] == "thinking" else "5"} time, so use it wisely to retreave all the information you need from the database about the company or depend on what you need.
-- db_connector : only {"3" if state["thinking_mode"] == "thinking" else "5"} time, so use it wisely to retreave all the information you need from the database about the company or depend on what you need.
+- db_connector : only {"3" if state["thinking_mode"] == "thinking" else "5"} time. YOU HAVE STRICTLY READ-ONLY ACCESS. You are NOT allowed to write, update, insert, or delete any data. Use it wisely to retrieve information you need.
+  Database schema details:
+  {canonical_desc}
 """
 )
     
@@ -121,10 +90,12 @@ Limits (tools credits):
         if not response.tool_calls:
             break
         # Execute independent tool calls in parallel
-        tool_results = _execute_tool_calls_parallel(response.tool_calls, _base_tool_map, agent_name="Retriever Agent")
+        tool_results = _execute_tool_calls_parallel(response.tool_calls, _base_tool_map, agent_name="Retriever Agent", state=state)
         msgs.extend(tool_results)
     else:
         print("WARNING: Retriever Agent reached maximum tool iterations.")
+        final_prompt = HumanMessage(content="You have reached the maximum number of allowed tool iterations. You MUST stop searching and provide a final answer using only the information you have gathered so far.")
+        response = get_helper_llm().invoke(msgs + [final_prompt])
     print(f"\n \n Retrever Agent Response: {response.content} \n \n RETRIEVED INFORMATION END \n \n")
     if emitter: emitter.emit_agent_done("Retriever Agent", response.content)
     return response.content
@@ -179,6 +150,8 @@ Limits:
 - Retreave_from_google_drive : only {"1" if state['thinking_mode'] == "thinking" else "2"} time, so use it wisely to retreave all the information you need from the google drive about the company or depend on what you need.
 - web_search : only {"1" if state['thinking_mode'] == "thinking" else "3"} times.
 - retreave_information : only {"1" if state['thinking_mode'] == "thinking" else "2"} time, so use it wisely to retreave all the information you need from the database about the company or depend on what you need.
+- db_connector : limit your database queries. YOU HAVE STRICTLY READ-ONLY ACCESS. You are NOT allowed to write, update, insert, or delete any data. If you use it, here is the schema:
+  {canonical_desc}
 """
 )
     retriever_llm = get_helper_llm().bind_tools(base_tools)
@@ -191,10 +164,12 @@ Limits:
         msgs.append(response)
         if not response.tool_calls:
             break
-        tool_results = _execute_tool_calls_parallel(response.tool_calls, _calc_tool_map, agent_name="Calculation Agent")
+        tool_results = _execute_tool_calls_parallel(response.tool_calls, _calc_tool_map, agent_name="Calculation Agent", state=state)
         msgs.extend(tool_results)
     else:
         print("WARNING: Calculation Agent reached maximum tool iterations.")
+        final_prompt = HumanMessage(content="You have reached the maximum number of allowed tool iterations. You MUST stop using tools and provide a final calculation result and explanation using only the information you have gathered so far.")
+        response = get_helper_llm().invoke(msgs + [final_prompt])
     print(f"\n \n Calculation Agent Response: {response.content} \n \n CALCULATION END \n \n")
     if emitter: emitter.emit_agent_done("Calculation Agent", response.content)
     return response.content
@@ -285,6 +260,8 @@ Limits:
 - Retreave_from_google_drive : only {"1" if state['thinking_mode'] == "thinking" else "2"} time, so use it wisely to retreave all the information you need from the google drive about the company or depend on what you need.
 - web_search : only {"1" if state['thinking_mode'] == "thinking" else "5"} times.
 - retreave_information : only {"1" if state['thinking_mode'] == "thinking" else "2"} time, so use it wisely to retreave all the information you need from the database about the company or depend on what you need.
+- db_connector : YOU HAVE STRICTLY READ-ONLY ACCESS. You are NOT allowed to write, update, insert, or delete any data. If you use it, here is the schema:
+  {canonical_desc}
 """
 )
     msgs = [system_prompt, HumanMessage(content=f"{query} (file path: {file_path})")]
@@ -295,10 +272,12 @@ Limits:
         msgs.append(response)
         if not response.tool_calls:
             break
-        tool_results = _execute_tool_calls_parallel(response.tool_calls, _audit_tool_map, agent_name="Audit Agent")
+        tool_results = _execute_tool_calls_parallel(response.tool_calls, _audit_tool_map, agent_name="Audit Agent", state=state)
         msgs.extend(tool_results)
     else:
-        print("WARNING: Audit Agent reached maximum tool iterations.")
+        print("WARNING: Audit Agent reached maximum tool iterations.")        
+        final_prompt = HumanMessage(content="You have reached the maximum number of allowed tool iterations. You MUST stop using tools and provide a final audit report and recommendations using only the information you have gathered so far.")
+        response = get_helper_llm().invoke(msgs + [final_prompt])    
     print(f"\n \n Audit Agent Response: {response.content} \n \n AUDIT REPORT END \n \n")
     if emitter: emitter.emit_agent_done("Audit Agent", response.content)
     return response.content
@@ -311,7 +290,7 @@ retriever_llm = get_helper_llm().bind_tools(base_tools)
 
 audit_tools = base_tools + [call_retriever_agent, call_calculation_agent]
 _audit_tool_map = {t.name: t for t in audit_tools}
-audit_llm = get_helper_llm().bind_tools(audit_tools)
+audit_llm = llm.bind_tools(audit_tools)
 # _audit_llm = ...
 
 calc_tools = base_tools + [call_retriever_agent]

@@ -143,6 +143,7 @@ def retreave_information(query: str) -> str:
     print(f"Retreaved Information: {[result.page_content for result in results]} \n \n \n \n \n \n")
     return "\n".join([result.page_content for result in results])
 tools = [calculate_Tax, retreave_information, search_web]
+llm = ChatOpenAI(model="gpt-4o", api_key=os.getenv("OPENAI_API_KEY"), base_url='https://api.openai.com/v1')
 llm =llm.bind_tools(tools)
 def Agent(state: AgentState) -> AgentState:
     """ The main function of the agent which takes the current state and returns the next state."""

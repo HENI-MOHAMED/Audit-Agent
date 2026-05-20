@@ -79,8 +79,20 @@ def get_llm():
 
 # Default instances (for backward compatibility)
 helper_llm = get_helper_llm()
-helper_llm_json = ChatDeepSeek(model="deepseek-chat", api_key=get_deepseek_api_key(), base_url='https://api.deepseek.com/v3.2_speciale_expires_on_20251215', temperature=0, streaming=True, model_kwargs={"response_format": {"type": "json_object"}})
-helper_llm_resoner = ChatDeepSeek(model="deepseek-reasoner", api_key=get_deepseek_api_key(), base_url='https://api.deepseek.com/v3.2_speciale_expires_on_20251215', temperature=0, streaming=True)
+helper_llm_json = ChatDeepSeek(model="deepseek-v4-flash", api_key=get_deepseek_api_key(), base_url='https://api.deepseek.com', temperature=0, streaming=True, model_kwargs={"response_format": {"type": "json_object"}})
+helper_llm_resoner = ChatDeepSeek(
+    model="deepseek-v4-flash",  # Note: deepseek-v4-flash might not support thinking mode
+    api_key=get_deepseek_api_key(),
+    base_url='https://api.deepseek.com',
+    temperature=0,  # Note: thinking mode ignores temperature, but it's fine to include
+    streaming=True,
+    model_kwargs={
+        "reasoning_effort": "high",  # or "max"
+        "extra_body": {
+            "thinking": {"type": "enabled"}
+        }
+    }
+)
 llm = get_llm()
 
 

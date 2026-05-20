@@ -3,11 +3,11 @@ import json
 import re
 import os
 
-from src.utils.config import get_helper_llm, MAX_TOOL_ITERATIONS, helper_llm_json
+from src.utils.config import get_helper_llm, MAX_TOOL_ITERATIONS
 from src.api.models import AgentState, invoice
 from src.database.db_tools import db_connector
 from src.tools.document_tools import scan_documents, search_web
-from src.agents.audit_agents import _execute_tool_calls_parallel
+from src.utils.tool_utils import _execute_tool_calls_parallel
 from src.agents.local_db_nodes import canonical_desc, clean_llm_json
 
 
@@ -29,7 +29,7 @@ def apply_severity_penalty(score: int, severity: str) -> int:
 
 
 #invoce Scanning Agent Node
-def audit_agent(state: AgentState) -> AgentState:
+def scan_agent(state: AgentState) -> AgentState:
     """Scans the invoice document and extracts relevant data."""
 
     print(f"Starting Invoice Scanning Agent with user input: {state['user_input']} \n \n")
@@ -38,7 +38,9 @@ def audit_agent(state: AgentState) -> AgentState:
     json
     You are an Invoice Scanning Agent. Your task is to extract all relevant data from the invoice given by the user, the company you are working for called """ + company_name + """.
     There is 3 senarios for the user request: 
-    1. the user give you the invoce Number, in this case you use the db_connector tool with ONLY this exact SQL query (replace INVOICE_NUMBER with the actual invoice number): SELECT i.*, il.*, c.name as supplier_name, c.tax_number, c.email, c.phone, c.address FROM invoices i JOIN invoice_lines il ON i.id = il.invoice_id LEFT JOIN contacts c ON i.supplier_id = c.id WHERE i.invoice_number = 'INVOICE_NUMBER'. Then organize the returned data into the required JSON format.
+    1. the user give you the invoce Number, in this case you use the db_connector tool with ONLY this exact SQL query (replace INVOICE_NUMBER with the actual invoice number): SELECT i.*, il.*, c.name as supplier_name, c.tax_number, c.email, c.phone, c.address FROM invoices i JOIN invoice_lines il ON i.id = il.invoice_id LEFT JOIN contacts c ON i.supplier_id = c.id WHERE i.invoice_number = 'INVOICE_NUMBER'. Then organize the returned data into the required JSON format. YOU HAVE STRICTLY READ-ONLY ACCESS. You are NOT allowed to write, update, insert, or delete any data.
+    Here is the schema of the local database for your reference:
+    {canonical_desc}
     2. the user give you the file path of the invoice, in this case you use the scan_documents tool to scan the invoice and extract the data. IMPORTANT: pass the COMPLETE file path exactly as provided by the user (including all directories, e.g. 'email_attachments/sender@example.com/invoice.pdf' or '/home/user/uploads/invoice.pdf'). Never strip the path down to just the filename.
     3. the user give you some information about the invoice but not the file path or the invoice number, ask the user for the invoice number or file path.
     \n\n
@@ -47,8 +49,7 @@ def audit_agent(state: AgentState) -> AgentState:
     [{"invoice_number": "Number of the invoice", "state": "waiting", "note": "if you have any notes put them here or anything you want", "invoice_data": {"type": "in_invoice|out_invoice|in_refund|out_refund|external", "supplier_name": "Name of the supplier", "amount": "Amount of the invoice", "customer_name": "Name of the customer", "VAT": "VAT amount", "address": "Address of the supplier", "creation_date": "Creation date of the invoice", "product_name": ["Name of product 1", "Name of product 2"], "price": ["Price of product 1", "Price of product 2"], "quantity": ["Quantity 1", "Quantity 2"], "currency": "Currency of the invoice", "category": ["Category 1", "Category 2"], "VAT_class": ["VAT class 1", "VAT class 2"], "total": "Total amount" } } ]
     2. if the extraction fails, you output an error message exactly in this format: 
     {"error": "Error message"}"""
-    # scanner_llm = get_helper_llm().bind_tools([db_connector, scan_documents])
-    scanner_llm = helper_llm_json.bind_tools([db_connector, scan_documents])
+    scanner_llm = get_helper_llm().bind_tools([db_connector, scan_documents])
     msgs = [SystemMessage(content=system_prompt)] + [state["user_input"]]
     for _iteration in range(MAX_TOOL_ITERATIONS):
         response = scanner_llm.invoke(msgs)
@@ -1608,8 +1609,7 @@ def payment_verification_node(state: AgentState) -> AgentState:
 
 def ai_review_node(state: AgentState) -> AgentState:
     """Performs an AI-based review of the invoice and all verification results to provide an overall assessment."""
-    # review_llm = get_helper_llm().bind_tools([db_connector, search_web])
-    review_llm = helper_llm_json.bind_tools([db_connector, search_web])
+    review_llm = get_helper_llm().bind_tools([db_connector, search_web])
     for i, invoice in enumerate(state["invoces"]):
         invoice.status = "ai_review"
 

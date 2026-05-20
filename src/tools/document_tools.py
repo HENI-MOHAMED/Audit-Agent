@@ -180,6 +180,7 @@ def _scan_documents_impl(file_path: str) -> str:
 @tool
 def scan_documents(file_path: str) -> str:
     """Scans a document (PDF, image, Excel or archive) and returns its content as text. Supports PDF, image (png, jpg, jpeg), xlsx/xls, zip and rar files."""
+    print(f"Scanning document Using scan_documents with path: {file_path}")
     return _scan_documents_impl(file_path)
 
 @tool

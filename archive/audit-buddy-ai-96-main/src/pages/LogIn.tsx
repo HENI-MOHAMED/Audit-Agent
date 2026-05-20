@@ -35,7 +35,19 @@ export default function LogIn() {
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
       }
-      localStorage.setItem("userRole", role);
+
+      const user = auth.currentUser;
+      if (user) {
+        const idToken = await user.getIdToken(true); // force refresh to get claims
+        const tokenResult = await user.getIdTokenResult();
+        const customRole = tokenResult.claims.role || role; // fallback to selected role if not assigned yet
+        
+        localStorage.setItem("authToken", idToken);
+        localStorage.setItem("userRole", customRole as string);
+      } else {
+        localStorage.setItem("userRole", role);
+      }
+
       navigate("/dashboard");
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {

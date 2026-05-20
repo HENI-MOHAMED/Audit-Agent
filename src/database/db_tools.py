@@ -10,12 +10,12 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 import psycopg2
 import re
-
+_Vector_DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/chroma_db_multilingual")
 
 # Cache Chroma DB instances to avoid re-creating connections on every retrieval
 _db_cache: dict[tuple, Chroma] = {}
 
-def LoadDataBase(persist_directory: str = "./data/chroma_db_multilingual", collection_name: str = "audit_documents_better_embeddings"):
+def LoadDataBase(persist_directory: str = _Vector_DB_PATH, collection_name: str = "audit_documents_better_embeddings"):
     """Load the existing database from the persist directory (cached)."""
     cache_key = (persist_directory, collection_name)
     if cache_key not in _db_cache:
@@ -26,8 +26,9 @@ def LoadDataBase(persist_directory: str = "./data/chroma_db_multilingual", colle
         )
     return _db_cache[cache_key]
 
+
 @tool
-def retreave_information(query: str, persist_directory: str = "./data/chroma_db_multilingual", collection_name: str = "audit_documents_better_embeddings") -> str:
+def retreave_information(query: str, persist_directory: str = _Vector_DB_PATH, collection_name: str = "audit_documents_better_embeddings") -> str:
     """ Retreaving information from the database based on the query. It uses similarity search to find the most relevant chunks of information."""
     db = LoadDataBase(persist_directory=persist_directory, collection_name=collection_name)
     results = db.similarity_search(query, k=1)
@@ -35,7 +36,7 @@ def retreave_information(query: str, persist_directory: str = "./data/chroma_db_
     return "\n".join(r.page_content for r in results)
 
 @tool
-def store_data(info: str, persist_directory: str = "./data/chroma_db_multilingual", collection_name: str = "default_collection") -> str:
+def store_data(info: str, persist_directory: str = _Vector_DB_PATH, collection_name: str = "default_collection") -> str:
     """Store new information in the database. This can be used to update the database with new findings or insights. it takes the information to store as a string, the persist directory and the collection name as input. it returns a success message with the collection name and the length of the stored information."""
     # Convert string to Document object
     doc = Document(page_content=info, metadata={"source": "stored_data"})

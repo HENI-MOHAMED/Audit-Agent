@@ -7,7 +7,7 @@ from src.utils.config import get_helper_llm, get_llm, MAX_TOOL_ITERATIONS, helpe
 from src.api.models import AgentState
 from src.database.db_tools import db_connector, import_file_to_local_db
 from src.tools.document_tools import scan_documents, Retreave_from_email, Retreave_from_google_drive
-from src.agents.audit_agents import _execute_tool_calls_parallel
+from src.utils.tool_utils import _execute_tool_calls_parallel
 
 CANONICAL_SCHEMA: dict[str, list[str]] = {
         "companies":       ["name", "tax_id", "address", "email", "phone"],
@@ -894,19 +894,10 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
     canonical_values = set(
         v for table_hints in canonical_hints.values() for col_hints in table_hints.values() for v in col_hints
     )
-
-    tables = [
-        "contacts",
-        "products",
-        "taxes",
-        "accounts",
-        "inventory",
-        "purchase_orders",
-        "inventory_logs",
-        "payments",
-        "audit_results",
-        "invoices",
-    ]
+    canonical_tables = set(canonical_hints.keys())
+    canonical_columns = set(
+        col for table_hints in canonical_hints.values() for col in table_hints.keys()
+    )
 
     # ------------------------------------------------
     # HELPER FUNCTIONS
@@ -920,11 +911,13 @@ def local_db_terminology_agent(state: AgentState) -> AgentState:
         valid = {}
 
         for table, columns in mapping.items():
-
+            if table not in canonical_tables:
+                continue
             valid[table] = {}
 
             for col, value_map in columns.items():
-
+                if col not in canonical_columns:
+                    continue
                 filtered = {}
                 for src, canonical in value_map.items():
 
@@ -1119,25 +1112,25 @@ Return JSON only.
     # SAVE/MERGE MAPPING
     # ------------------------------------------------
 
-    if os.path.exists(mapping_file):
-        try:
-            with open(mapping_file, "r") as f:
-                old_mapping = json.load(f)
+    # if os.path.exists(mapping_file):
+    #     try:
+    #         with open(mapping_file, "r") as f:
+    #             old_mapping = json.load(f)
             
-            for table, columns in old_mapping.items():
-                if table not in mapping:
-                    mapping[table] = columns
-                else:
-                    for col, value_map in columns.items():
-                        if col not in mapping[table]:
-                            mapping[table][col] = value_map
-                        else:
-                            # Keep new mapping, backfill old ones not mapped
-                            for src, canonical in value_map.items():
-                                if src not in mapping[table][col]:
-                                    mapping[table][col][src] = canonical
-        except:
-            pass
+    #         for table, columns in old_mapping.items():
+    #             if table not in mapping:
+    #                 mapping[table] = columns
+    #             else:
+    #                 for col, value_map in columns.items():
+    #                     if col not in mapping[table]:
+    #                         mapping[table][col] = value_map
+    #                     else:
+    #                         # Keep new mapping, backfill old ones not mapped
+    #                         for src, canonical in value_map.items():
+    #                             if src not in mapping[table][col]:
+    #                                 mapping[table][col][src] = canonical
+    #     except:
+    #         pass
 
     os.makedirs(os.path.dirname(mapping_file), exist_ok=True)
     with open(mapping_file, "w") as f:
@@ -1217,6 +1210,7 @@ def remove_duplicates_from_all_tables(db_path: str = None) -> None:
     cursor = conn.cursor()
     
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    print(cursor.fetchall())
     tables = [row[0] for row in cursor.fetchall() if row[0] != "sqlite_sequence"]
     
     total_deleted = 0
@@ -1251,4 +1245,3 @@ def remove_duplicates_from_all_tables(db_path: str = None) -> None:
     conn.commit()
     conn.close()
     print(f"Total duplicates removed across all tables: {total_deleted}")
-

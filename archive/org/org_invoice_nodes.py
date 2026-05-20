@@ -7,7 +7,7 @@ from config import get_helper_llm, MAX_TOOL_ITERATIONS
 from models import AgentState, invoice
 from DataBase.db_tools import db_connector
 from document_tools import scan_documents, search_web
-from audit_agents import _execute_tool_calls_parallel
+from src.utils.tool_utils import _execute_tool_calls_parallel
 from local_db_nodes import canonical_desc, clean_llm_json
 
 

@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Play, Loader2, AlertTriangle, CheckCircle, FileUp, X, Database, Search } from "lucide-react";
-import { runAudit } from "@/services/api";
+import { runAudit, uploadDocs } from "@/services/api";
 import { useInvoices } from "@/services/queries";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useToast } from "@/hooks/use-toast";
@@ -86,7 +86,11 @@ export default function AuditPage() {
     setAuditInvoices(fileNames);
     setError(null);
     try {
-      // Tell the Audit agent about the files to audit
+      // First upload the chosen files to the server
+      // const uploadRes = await uploadDocs(selectedFiles, sessionId ?? undefined);
+      // if (!sessionId && uploadRes.session_id) setSessionId(uploadRes.session_id);
+
+      // Now tell the Audit agent about the files to audit
       const filePaths = fileNames.join('|');
       const message = `Audit these invoices: ${filePaths}`;
       const auditRes = await runAudit(message, sessionId ?? undefined);
@@ -106,10 +110,6 @@ export default function AuditPage() {
         title: "Audit Complete",
         description: `Successfully audited ${finalResults.length} item(s).`,
       });
-
-      // Then upload the chosen files to the server
-      // const uploadRes = await uploadDocs(selectedFiles, sessionId ?? undefined);
-      // if (!sessionId && uploadRes.session_id) setSessionId(uploadRes.session_id);
     } catch (e: any) {
       setError(e.message);
       toast({

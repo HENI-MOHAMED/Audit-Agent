@@ -1,14 +1,22 @@
 const API_BASE = "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const idToken = localStorage.getItem("authToken") || "";
   const role = localStorage.getItem("userRole") || "guest";
+  
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-User-Role": role,
+    ...(options?.headers as Record<string, string> || {})
+  };
+  
+  if (idToken) {
+    headers["Authorization"] = `Bearer ${idToken}`;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: { 
-      "Content-Type": "application/json",
-      "x-user-role": role,
-      ...(options?.headers || {})
-    },
+    headers,
   });
   if (!res.ok) {
     const text = await res.text();
