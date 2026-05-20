@@ -1,4 +1,4 @@
-# 🤖 Audit Buddy AI (Audit Agent)
+# Audit Buddy AI (Audit Agent)
 
 ![Audit Agent Banner](https://img.shields.io/badge/Status-Active-success)
 ![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)
@@ -115,7 +115,17 @@ FIREBASE_CREDENTIALS_PATH=./firebase-service-account.json
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+This means:
+- ✅ Free to use, study, and modify
+- ✅ Free to distribute and contribute
+- ⚠️ Any derivative work or SaaS deployment **must also be open-sourced** under AGPL-3.0
+- ❌ You may **not** use this in a closed-source commercial product without a separate commercial license
+
+For commercial licensing inquiries, contact: **your@email.com**
+
+See the [LICENSE](./LICENSE) file for the full legal text.
 
 ## 🤝 Contributing
 
