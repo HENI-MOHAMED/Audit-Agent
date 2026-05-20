@@ -1,3 +1,5 @@
+import { useState } from "react";
+import html2canvas from "html2canvas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChartSkeleton, StatsSkeleton } from "@/components/Skeletons";
@@ -124,8 +126,68 @@ function AccuracyBadge({ label, accuracy }: { label: string; accuracy: number })
 
 export default function ReportsPage() {
   const { data, isLoading, error } = useFullReport();
+  const [isExporting, setIsExporting] = useState(false);
 
-  const handleExportPdf = () => window.print();
+  const handleExportPdf = async () => {
+    if (!data) return;
+    try {
+      setIsExporting(true);
+      
+      const chartIds = [
+        "chart-revenue", "chart-cogs", "chart-margin", "chart-dso",
+        "chart-billed", "chart-volume", "chart-customer", "chart-predict"
+      ];
+      
+      const images: Record<string, string> = {};
+      
+      for (const id of chartIds) {
+        const el = document.getElementById(id);
+        if (el) {
+          const originalStyle = el.style.cssText;
+          // Temporarily fix styling to prevent scrolling clipping issues in html2canvas
+          el.style.transform = "none";
+          
+          const canvas = await html2canvas(el, { 
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            windowWidth: document.documentElement.scrollWidth,
+            windowHeight: document.documentElement.scrollHeight
+          });
+          images[id] = canvas.toDataURL("image/png");
+          
+          el.style.cssText = originalStyle;
+        }
+      }
+      
+      const payload = {
+        data: data,
+        images: images
+      };
+      
+      const response = await fetch("http://localhost:8000/api/reports/generate_pdf_report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) throw new Error("Failed to generate PDF");
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Financial_Intelligence_Report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Error generating PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   /* ── Loading ── */
   if (isLoading) {
@@ -254,10 +316,15 @@ export default function ReportsPage() {
         </div>
         <button
           onClick={handleExportPdf}
-          className="no-print inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+          disabled={isExporting}
+          className="no-print inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
         >
-          <Download className="h-4 w-4" />
-          Export as PDF
+          {isExporting ? (
+            <div className="h-4 w-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+          {isExporting ? "Generating..." : "Export as PDF"}
         </button>
       </div>
 
@@ -277,7 +344,7 @@ export default function ReportsPage() {
       {/* ═══════ 2. REVENUE & PROFITABILITY ═══════ */}
       <div>
         <SectionHeader icon={TrendingUp} title="Revenue & Profitability Trend" description="Monthly revenue vs net profit over time" />
-        <Card className="animate-fade-in">
+        <Card id="chart-revenue" className="animate-fade-in">
           <CardContent className="pt-5">
             {revenueChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
@@ -303,7 +370,7 @@ export default function ReportsPage() {
       <div>
         <SectionHeader icon={PieIcon} title="COGS & Expense Analysis" description="Cost structure breakdown and ratio trends" />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="animate-fade-in">
+          <Card id="chart-cogs" className="animate-fade-in">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Cost Breakdown Over Time</CardTitle></CardHeader>
             <CardContent>
               {revenueChartData.length > 0 ? (
@@ -324,7 +391,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="animate-fade-in">
+          <Card id="chart-margin" className="animate-fade-in">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Margin & Ratio Trends</CardTitle></CardHeader>
             <CardContent>
               {marginChartData.length > 0 ? (
@@ -352,7 +419,7 @@ export default function ReportsPage() {
       <div>
         <SectionHeader icon={Activity} title="Cash Flow & Collection Metrics" description="Payment behavior, DSO trends, and billed vs collected" />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="animate-fade-in">
+          <Card id="chart-dso" className="animate-fade-in">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">DSO & Overdue Trend</CardTitle></CardHeader>
             <CardContent>
               {cashFlowData.length > 0 ? (
@@ -374,7 +441,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="animate-fade-in">
+          <Card id="chart-billed" className="animate-fade-in">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Billed vs Collected</CardTitle></CardHeader>
             <CardContent>
               {cashFlowData.length > 0 ? (
@@ -401,7 +468,7 @@ export default function ReportsPage() {
       <div>
         <SectionHeader icon={Users} title="Volume & Customer Concentration" description="Invoice volume, average value, and customer dependency risk" />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="animate-fade-in">
+          <Card id="chart-volume" className="animate-fade-in">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Invoice Volume & Avg Value</CardTitle></CardHeader>
             <CardContent>
               {volumeData.length > 0 ? (
@@ -423,7 +490,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="animate-fade-in">
+          <Card id="chart-customer" className="animate-fade-in">
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Customer Concentration Risk</CardTitle></CardHeader>
             <CardContent>
               {volumeData.length > 0 ? (
@@ -450,7 +517,7 @@ export default function ReportsPage() {
       {/* ═══════ 6. PROFIT PREDICTIONS ═══════ */}
       <div>
         <SectionHeader icon={Target} title="ML Profit Predictions" description="3-month profit forecast from Random Forest & XGBoost models" />
-        <Card className="animate-fade-in">
+        <Card id="chart-predict" className="animate-fade-in">
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-sm font-medium">Net Profit — Historical + 3-Month Forecast</CardTitle>

@@ -1,6 +1,13 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, HTTPException, Depends
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
+from src.api.models import AgentState, ReportDataRequest
+from src.utils.stream_utils import StreamEmitter, set_emitter
+from src.utils.pdf_narrative import generate_pdf_narrative
+from fpdf import FPDF
+from fastapi.responses import Response
+import base64
+import tempfile
 import asyncio
 import json
 import sqlite3
@@ -1633,3 +1640,116 @@ async def create_purchase_order(req: PurchaseOrderCreateRequest):
     finally:
         cursor.close()
         conn.close()
+
+class PDFReport(FPDF):
+    def header(self):
+        if self.page_no() == 1:
+            self.set_font('Helvetica', 'B', 15)
+            self.cell(0, 10, 'Financial Intelligence Report', 0, 1, 'C')
+            self.set_draw_color(200, 200, 200)
+            self.line(10, 20, 200, 20)
+            self.ln(10)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+@router.post("/reports/generate_pdf_report")
+async def generate_pdf_report(req: ReportDataRequest):
+    try:
+        # Get AI narrative as a structured dictionary
+        analysis_data = generate_pdf_narrative(req.data)
+        
+        def clean_text(text: str) -> str:
+            if not text: return ""
+            replacements = {
+                '\u2018': "'", '\u2019': "'",
+                '\u201c': '"', '\u201d': '"',
+                '\u2013': "-", '\u2014': "-",
+                '\u2026': "...", '\u00a0': " "
+            }
+            for k, v in replacements.items():
+                text = text.replace(k, v)
+            return text
+
+        # Assemble PDF
+        pdf = PDFReport()
+        pdf.add_page()
+        
+        pdf.set_font("Helvetica", 'B', 14)
+        pdf.cell(0, 10, 'Executive Summary', 0, 1)
+        pdf.set_font("Helvetica", size=11)
+        pdf.multi_cell(0, 6, clean_text(analysis_data.get("executive_summary", "")))
+        pdf.ln(10)
+
+        chart_titles = {
+            "chart-revenue": ("1.1", "Revenue & Profitability Trend"),
+            "chart-cogs": ("2.1", "Cost Breakdown Over Time"),
+            "chart-margin": ("2.2", "Margin & Ratio Trends"),
+            "chart-dso": ("3.1", "DSO & Overdue Trend"),
+            "chart-billed": ("3.2", "Billed vs Collected"),
+            "chart-volume": ("4.1", "Invoice Volume & Avg Value"),
+            "chart-customer": ("4.2", "Customer Concentration Risk"),
+            "chart-predict": ("5.1", "ML Profit Predictions")
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for chart_id, title_info in chart_titles.items():
+                # Print section title
+                pdf.set_font("Helvetica", 'B', 13)
+                pdf.cell(0, 10, f'{title_info[0]} {title_info[1]}', 0, 1)
+                
+                # Print specific analysis
+                chart_analysis = clean_text(analysis_data.get(chart_id, ""))
+                if chart_analysis:
+                    pdf.set_font("Helvetica", size=11)
+                    pdf.multi_cell(0, 6, chart_analysis)
+                    pdf.ln(5)
+
+                if chart_id in req.images:
+                    img_data = req.images[chart_id]
+                    if img_data.startswith('data:image/png;base64,'):
+                        img_data = img_data.split('data:image/png;base64,')[1]
+                    
+                    img_bytes = base64.b64decode(img_data)
+                    img_path = os.path.join(tmpdir, f"{chart_id}.png")
+                    with open(img_path, 'wb') as f:
+                        f.write(img_bytes)
+
+                    # Check space required for image
+                    # A4 height is 297mm. Leave 20mm bottom margin. Image height roughly 90-100mm.
+                    if pdf.get_y() > 180: 
+                        pdf.add_page()
+
+                    # Image
+                    pdf.image(img_path, w=180)
+                    
+                    # Figure caption below the image
+                    pdf.ln(2)
+                    pdf.set_font("Helvetica", 'I', 10)
+                    pdf.cell(0, 6, f'Figure {title_info[0]}: {title_info[1]}', 0, 1, 'C')
+                    pdf.ln(10)
+                else:
+                    pdf.ln(5)
+
+        # Print Conclusion
+        conclusion_text = clean_text(analysis_data.get("conclusion", ""))
+        if conclusion_text:
+            pdf.add_page()
+            pdf.set_font("Helvetica", 'B', 14)
+            pdf.cell(0, 10, 'Conclusion & Recommendations', 0, 1)
+            pdf.set_font("Helvetica", size=11)
+            pdf.multi_cell(0, 6, conclusion_text)
+
+        pdf_bytes = bytes(pdf.output())
+        
+        return Response(
+            content=pdf_bytes, 
+            media_type="application/pdf", 
+            headers={"Content-Disposition": 'attachment; filename="Financial_Intelligence_Report.pdf"'}
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+

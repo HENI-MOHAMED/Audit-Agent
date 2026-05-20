@@ -1,8 +1,13 @@
-from typing import TypedDict, Sequence, Annotated
+from pydantic import BaseModel
+from typing import TypedDict, Sequence, Annotated, Dict, Any, Optional
 from dataclasses import dataclass, field
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
+
+class ReportDataRequest(BaseModel):
+    data: Dict[str, Any]
+    images: Dict[str, str]
 
 @dataclass
 class invoice:
