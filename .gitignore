@@ -7,7 +7,8 @@ email_attachments/
 Google_Drive_Retrete/
 *.pyc
 .venv
-data
+data/*
 archive/PDF_lib
 node_modules
 firebase_service_account.json
+tests
