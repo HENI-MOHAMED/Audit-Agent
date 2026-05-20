@@ -1,11 +1,11 @@
-# Audit Buddy AI (Audit Agent)
+# Audit Agent AI (Audit Agent)
 
 ![Audit Agent Banner](https://img.shields.io/badge/Status-Active-success)
 ![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![React](https://img.shields.io/badge/React-18-blue)
 ![AI Models](https://img.shields.io/badge/AI-DeepSeek%2FOpenAI-orange)
 
-An intelligent, AI-powered financial auditing and intelligence platform. **Audit Buddy AI** leverages state-of-the-art Large Language Models (LLMs) and Machine Learning to automate financial audits, detect anomalies, forecast revenue, and generate professional analytical PDF reports.
+An intelligent, AI-powered financial auditing and intelligence platform. **Audit Agent AI** leverages state-of-the-art Large Language Models (LLMs) and Machine Learning to automate financial audits, detect anomalies, forecast revenue, and generate professional analytical PDF reports.
 
 ## ✨ Key Features
 
@@ -64,8 +64,8 @@ An intelligent, AI-powered financial auditing and intelligence platform. **Audit
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/audit-buddy-ai.git
-cd audit-buddy-ai
+git clone https://github.com/HENI-MOHAMED/Audit-Agent.git
+cd Audit-Agent
 
 # Create and activate a virtual environment
 python3 -m venv .venv
@@ -123,7 +123,7 @@ This means:
 - ⚠️ Any derivative work or SaaS deployment **must also be open-sourced** under AGPL-3.0
 - ❌ You may **not** use this in a closed-source commercial product without a separate commercial license
 
-For commercial licensing inquiries, contact: **your@email.com**
+For commercial licensing inquiries, contact: **mohamedheni1111@gmail.com**
 
 See the [LICENSE](./LICENSE) file for the full legal text.
 
