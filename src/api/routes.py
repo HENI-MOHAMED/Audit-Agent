@@ -760,9 +760,96 @@ async def sync_email(req: EmailSyncRequest):
     }
 
 
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════
+#  SELECTIVE EMAIL / GOOGLE DRIVE IMPORT
+#
+#  Two-step flow: search returns candidate files (no download), then the
+#  user picks which ones to import. Imported files are run through the
+#  existing "upload" pipeline (scan → local DB ingestion).
+# ═══════════════════════════════════════════════════
+
+class EmailSearchRequest(BaseModel):
+    query: str
+
+class EmailImportRequest(BaseModel):
+    query: str
+    attachments: list[dict]
+
+class DriveSearchRequest(BaseModel):
+    query: str
+
+class DriveImportRequest(BaseModel):
+    query: str
+    file_ids: list[str]
+
+
+@router.post("/email/search")
+async def email_search(req: EmailSearchRequest):
+    from src.tools.document_tools import search_email
+    results = await asyncio.to_thread(search_email, req.query)
+    return {"results": results, "count": len(results)}
+
+
+@router.post("/email/import")
+async def email_import(req: EmailImportRequest):
+    from main import app as graph_app
+    from src.tools.document_tools import save_email_attachments
+
+    if not req.attachments:
+        return {"route": "email_import", "session_id": None, "message": "No attachments selected.", "files": []}
+
+    session_id, config = _get_thread_config(None)
+    _active_sessions.setdefault(session_id, {})
+
+    paths = await asyncio.to_thread(save_email_attachments, req.query, req.attachments)
+
+    if paths:
+        inp = _initial_input(route="upload", local_db_files=paths)
+        await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    return {
+        "route": "email_import",
+        "session_id": session_id,
+        "message": f"Imported {len(paths)} attachment(s) into the system.",
+        "files": paths,
+    }
+
+
+@router.post("/drive/search")
+async def drive_search(req: DriveSearchRequest):
+    from src.tools.document_tools import search_google_drive
+    results = await asyncio.to_thread(search_google_drive, req.query)
+    return {"results": results, "count": len(results)}
+
+
+@router.post("/drive/import")
+async def drive_import(req: DriveImportRequest):
+    from main import app as graph_app
+    from src.tools.document_tools import download_google_drive_files
+
+    if not req.file_ids:
+        return {"route": "drive_import", "session_id": None, "message": "No files selected.", "files": []}
+
+    session_id, config = _get_thread_config(None)
+    _active_sessions.setdefault(session_id, {})
+
+    paths = await asyncio.to_thread(download_google_drive_files, req.query, req.file_ids)
+
+    if paths:
+        inp = _initial_input(route="upload", local_db_files=paths)
+        await asyncio.to_thread(graph_app.invoke, inp, config)
+
+    return {
+        "route": "drive_import",
+        "session_id": session_id,
+        "message": f"Imported {len(paths)} file(s) from Google Drive into the system.",
+        "files": paths,
+    }
+
+
+# ═══════════════════════════════════════════════════
 #  WEBSOCKET – live access to ai_audit_db.sqlite
-# ═══════════════════════════════════════════════
+# ═══════════════════════════════════════════════════
 
 def _execute_read_query(sql: str) -> list[dict]:
     conn = sqlite3.connect(_DB_PATH, timeout=10)

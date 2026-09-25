@@ -159,6 +159,50 @@ export const syncEmail = (query: string, session_id?: string) =>
     body: JSON.stringify({ query, session_id }),
   });
 
+// ── Email search & selective import ──
+export interface EmailAttachment {
+  uid: string;
+  email_subject: string;
+  email_from: string;
+  email_date: string;
+  index: number;
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  createdTime?: string;
+  modifiedTime?: string;
+}
+
+export const searchEmail = (query: string) =>
+  request<{ results: EmailAttachment[]; count: number }>("/email/search", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
+
+export const importEmail = (query: string, attachments: EmailAttachment[]) =>
+  request<{ route: string; session_id: string | null; message: string; files: string[] }>(
+    "/email/import",
+    { method: "POST", body: JSON.stringify({ query, attachments }) }
+  );
+
+export const searchDrive = (query: string) =>
+  request<{ results: DriveFile[]; count: number }>("/drive/search", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
+
+export const importDrive = (query: string, file_ids: string[]) =>
+  request<{ route: string; session_id: string | null; message: string; files: string[] }>(
+    "/drive/import",
+    { method: "POST", body: JSON.stringify({ query, file_ids }) }
+  );
+
 // ── Upload Docs ──
 export const uploadDocs = async (files: File[], session_id?: string) => {
   const form = new FormData();

@@ -37,7 +37,8 @@ def get_email_address():
 
 def get_email_app_password():
     """Get email app password from global config or env."""
-    return "wfdd npyq ugpk cbuf"
+    config = get_global_config()
+    return config.get("email_app_password") or os.getenv("EMAIL_APP_PASSWORD")
 
 # Database configuration getters
 def get_odoo_db_host():

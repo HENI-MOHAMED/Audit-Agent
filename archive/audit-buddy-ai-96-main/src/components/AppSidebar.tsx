@@ -10,6 +10,7 @@ import {
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useLanguage } from "@/lib/language";
 
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -33,6 +34,7 @@ const systemItems = [
 ];
 
 export function AppSidebar() {
+  const { t } = useLanguage();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   
@@ -53,7 +55,7 @@ export function AppSidebar() {
             activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
           >
             <item.icon className="h-4 w-4 shrink-0" />
-            {!collapsed && <span className="text-sm">{item.title}</span>}
+            {!collapsed && <span className="text-sm">{t(item.title)}</span>}
           </NavLink>
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -72,14 +74,14 @@ export function AppSidebar() {
             </div>
             {!collapsed && (
               <div>
-                <h1 className="text-sm font-semibold text-sidebar-accent-foreground">AuditAI</h1>
-                <p className="text-xs text-sidebar-muted">Supplier Portal</p>
+                <h1 className="text-sm font-semibold text-sidebar-accent-foreground">ADIT</h1>
+                <p className="text-xs text-sidebar-muted">{t("Supplier Portal")}</p>
               </div>
             )}
           </div>
 
           <SidebarGroup>
-            <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">Supplier Space</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">{t("Supplier Space")}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>{renderItems(supplierItems)}</SidebarMenu>
             </SidebarGroupContent>
@@ -98,21 +100,21 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div>
-              <h1 className="text-sm font-semibold text-sidebar-accent-foreground">AuditAI</h1>
-              <p className="text-xs text-sidebar-muted">Financial Audit Agent</p>
+              <h1 className="text-sm font-semibold text-sidebar-accent-foreground">ADIT6</h1>
+              <p className="text-xs text-sidebar-muted">{t("Financial Audit Agent")}</p>
             </div>
           )}
         </div>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">Main</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">{t("Main")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>{renderItems(mainItems)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">System</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-muted text-xs uppercase tracking-wider px-3">{t("System")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>{renderItems(systemItems)}</SidebarMenu>
           </SidebarGroupContent>

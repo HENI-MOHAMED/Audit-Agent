@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, FileUp, Loader2, CheckCircle, AlertTriangle, Database, RefreshCw, Mail, Cloud, Sparkles, ChevronDown, ChevronUp, Edit2, Save, X } from "lucide-react";
-import { uploadDocs, syncLocalDb, syncEmail, getMapping, getOdooSchema, updateMapping } from "@/services/api";
+import { Upload, FileUp, Loader2, CheckCircle, AlertTriangle, Database, RefreshCw, Mail, Cloud, Sparkles, ChevronDown, ChevronUp, Edit2, Save, X, FileDown } from "lucide-react";
+import { uploadDocs, syncLocalDb, searchEmail, importEmail, searchDrive, importDrive, getMapping, getOdooSchema, updateMapping, type EmailAttachment, type DriveFile } from "@/services/api";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,6 +27,12 @@ export default function UploadPage() {
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [emailSyncResult, setEmailSyncResult] = useState<string | null>(null);
   const [driveSyncResult, setDriveSyncResult] = useState<string | null>(null);
+  const [emailResults, setEmailResults] = useState<EmailAttachment[]>([]);
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [emailImporting, setEmailImporting] = useState(false);
+  const [driveResults, setDriveResults] = useState<DriveFile[]>([]);
+  const [selectedDrives, setSelectedDrives] = useState<Set<string>>(new Set());
+  const [driveImporting, setDriveImporting] = useState(false);
   const [mappingData, setMappingData] = useState<any>(null);
   const [odooSchema, setOdooSchema] = useState<Record<string, string[]> | null>(null);
   const [showMapping, setShowMapping] = useState(false);
@@ -160,38 +167,113 @@ export default function UploadPage() {
     }
   };
 
-  const handleEmailSync = async () => {
+  const handleEmailSearch = async () => {
     if (!emailQuery.trim()) return;
     setEmailSyncing(true);
     setEmailSyncResult(null);
+    setEmailResults([]);
+    setSelectedEmails(new Set());
     try {
-      const res = await syncEmail(`From email: ${emailQuery}`, sessionId ?? undefined);
-      if (!sessionId) setSessionId(res.session_id);
-      setEmailSyncResult(res.message);
-      toast({ title: "Email Sync complete", description: res.message });
+      const res = await searchEmail(emailQuery);
+      setEmailResults(res.results);
+      setEmailSyncResult(
+        res.count === 0
+          ? "No attachments found for that search."
+          : `Found ${res.count} attachment(s). Select the ones to import.`
+      );
     } catch (err: any) {
       setEmailSyncResult(`Error: ${err.message}`);
-      toast({ title: "Email Sync failed", description: err.message, variant: "destructive" });
+      toast({ title: "Email search failed", description: err.message, variant: "destructive" });
     } finally {
       setEmailSyncing(false);
     }
   };
 
-  const handleDriveSync = async () => {
+  const handleEmailImport = async () => {
+    if (selectedEmails.size === 0) return;
+    setEmailImporting(true);
+    try {
+      const selected = emailResults.filter((a) => selectedEmails.has(`${a.uid}:${a.index}`));
+      const res = await importEmail(emailQuery, selected);
+      if (res.session_id) setSessionId(res.session_id);
+      setEmailSyncResult(res.message);
+      setSelectedEmails(new Set());
+      toast({ title: "Import complete", description: res.message });
+    } catch (err: any) {
+      setEmailSyncResult(`Error: ${err.message}`);
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setEmailImporting(false);
+    }
+  };
+
+  const handleDriveSearch = async () => {
     if (!driveQuery.trim()) return;
     setDriveSyncing(true);
     setDriveSyncResult(null);
+    setDriveResults([]);
+    setSelectedDrives(new Set());
     try {
-      const res = await syncEmail(`From google drive: ${driveQuery}`, sessionId ?? undefined);
-      if (!sessionId) setSessionId(res.session_id);
-      setDriveSyncResult(res.message);
-      toast({ title: "Drive Sync complete", description: res.message });
+      const res = await searchDrive(driveQuery);
+      setDriveResults(res.results);
+      setDriveSyncResult(
+        res.count === 0
+          ? "No files found for that search."
+          : `Found ${res.count} file(s). Select the ones to import.`
+      );
     } catch (err: any) {
       setDriveSyncResult(`Error: ${err.message}`);
-      toast({ title: "Drive Sync failed", description: err.message, variant: "destructive" });
+      toast({ title: "Drive search failed", description: err.message, variant: "destructive" });
     } finally {
       setDriveSyncing(false);
     }
+  };
+
+  const handleDriveImport = async () => {
+    if (selectedDrives.size === 0) return;
+    setDriveImporting(true);
+    try {
+      const res = await importDrive(driveQuery, Array.from(selectedDrives));
+      if (res.session_id) setSessionId(res.session_id);
+      setDriveSyncResult(res.message);
+      setSelectedDrives(new Set());
+      toast({ title: "Import complete", description: res.message });
+    } catch (err: any) {
+      setDriveSyncResult(`Error: ${err.message}`);
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setDriveImporting(false);
+    }
+  };
+
+  const toggleEmail = (key: string) => {
+    setSelectedEmails((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleDrive = (id: string) => {
+    setSelectedDrives((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (!bytes) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    let i = 0;
+    let n = bytes;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    return `${n.toFixed(1)} ${units[i]}`;
   };
 
   const StatusMessage = ({ result, isError }: { result: string | null; isError?: boolean }) => {
@@ -460,11 +542,11 @@ export default function UploadPage() {
                   placeholder="e.g., 'October AWS invoices'"
                   className="bg-background"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && emailQuery.trim() && !emailSyncing) handleEmailSync();
+                    if (e.key === 'Enter' && emailQuery.trim() && !emailSyncing) handleEmailSearch();
                   }}
                 />
                 <Button 
-                  onClick={handleEmailSync} 
+                  onClick={handleEmailSearch} 
                   disabled={emailSyncing || !emailQuery.trim()} 
                   className="w-full font-medium text-white"
                 >
@@ -472,6 +554,44 @@ export default function UploadPage() {
                   Locate in Email
                 </Button>
               </div>
+
+              {emailResults.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <div className="max-h-56 overflow-y-auto rounded-lg border border-border/50 divide-y divide-border/50">
+                    {emailResults.map((a) => {
+                      const key = `${a.uid}:${a.index}`;
+                      const checked = selectedEmails.has(key);
+                      return (
+                        <div
+                          key={key}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleEmail(key)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEmail(key); } }}
+                          className={`w-full flex items-start gap-2.5 p-2.5 text-left transition-colors hover:bg-muted/40 cursor-pointer ${checked ? "bg-primary/5" : ""}`}
+                        >
+                          <Checkbox checked={checked} className="mt-0.5 pointer-events-none" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{a.filename}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {a.email_from} · {formatBytes(a.size)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    onClick={handleEmailImport}
+                    disabled={emailImporting || selectedEmails.size === 0}
+                    variant="secondary"
+                    className="w-full font-medium"
+                  >
+                    {emailImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}
+                    Import Selected ({selectedEmails.size})
+                  </Button>
+                </div>
+              )}
             </div>
             <StatusMessage result={emailSyncResult} />
           </CardContent>
@@ -500,18 +620,55 @@ export default function UploadPage() {
                   placeholder="e.g., 'Q3 Legal forms'"
                   className="bg-background"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && driveQuery.trim() && !driveSyncing) handleDriveSync();
+                    if (e.key === 'Enter' && driveQuery.trim() && !driveSyncing) handleDriveSearch();
                   }}
                 />
                 <Button 
-                  onClick={handleDriveSync} 
+                  onClick={handleDriveSearch} 
                   disabled={driveSyncing || !driveQuery.trim()} 
                   className="w-full font-medium text-white"
                 >
                   {driveSyncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Cloud className="h-4 w-4 mr-2" />}
-                  Import from Drive
+                  Search Drive
                 </Button>
               </div>
+
+              {driveResults.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <div className="max-h-56 overflow-y-auto rounded-lg border border-border/50 divide-y divide-border/50">
+                    {driveResults.map((f) => {
+                      const checked = selectedDrives.has(f.id);
+                      return (
+                        <div
+                          key={f.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleDrive(f.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleDrive(f.id); } }}
+                          className={`w-full flex items-start gap-2.5 p-2.5 text-left transition-colors hover:bg-muted/40 cursor-pointer ${checked ? "bg-primary/5" : ""}`}
+                        >
+                          <Checkbox checked={checked} className="mt-0.5 pointer-events-none" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{f.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {f.mimeType}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    onClick={handleDriveImport}
+                    disabled={driveImporting || selectedDrives.size === 0}
+                    variant="secondary"
+                    className="w-full font-medium"
+                  >
+                    {driveImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}
+                    Import Selected ({selectedDrives.size})
+                  </Button>
+                </div>
+              )}
             </div>
             <StatusMessage result={driveSyncResult} />
           </CardContent>

@@ -13,12 +13,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useLanguage } from "@/lib/language";
 
 export function AppHeader() {
   const [darkMode, setDarkMode] = useState(false);
   const { sessionId } = useSessionStore();
   const { notifications, markAsRead, markAllAsRead, removeNotification, clearAll } = useNotificationStore();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -39,7 +41,7 @@ export function AppHeader() {
         <div className="relative hidden sm:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search invoices, suppliers..."
+            placeholder={t("Search invoices, suppliers...")}
             className="pl-9 w-64 h-9 bg-secondary border-none text-sm"
           />
         </div>
@@ -67,14 +69,14 @@ export function AppHeader() {
           </PopoverTrigger>
           <PopoverContent className="w-80 p-0" align="end">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <h4 className="font-semibold text-sm">Notifications</h4>
+              <h4 className="font-semibold text-sm">{t("Notifications")}</h4>
               {notifications.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" className="h-auto p-1 text-xs" onClick={markAllAsRead}>
-                    <Check className="h-3 w-3 mr-1" /> Mark all read
+                    <Check className="h-3 w-3 mr-1" /> {t("Mark all read")}
                   </Button>
                   <Button variant="ghost" size="sm" className="h-auto p-1 text-xs text-destructive hover:text-destructive" onClick={clearAll}>
-                    <Trash2 className="h-3 w-3 mr-1" /> Clear
+                    <Trash2 className="h-3 w-3 mr-1" /> {t("Clear")}
                   </Button>
                 </div>
               )}
@@ -83,8 +85,8 @@ export function AppHeader() {
               {notifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 px-4 text-center text-muted-foreground">
                   <Bell className="h-8 w-8 mb-3 opacity-20" />
-                  <p className="text-sm font-medium">No notifications yet</p>
-                  <p className="text-xs mt-1">We'll let you know when something arrives.</p>
+                  <p className="text-sm font-medium">{t("No notifications yet")}</p>
+                  <p className="text-xs mt-1">{t("We'll let you know when something arrives.")}</p>
                 </div>
               ) : (
                 <div className="flex flex-col divide-y divide-border">

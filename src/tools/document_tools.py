@@ -2,6 +2,10 @@ from langchain_core.tools import tool
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Absolute path to the project root (used to resolve storage directories
+# regardless of the current working directory).
+_STORAGE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 @tool
 def search_web(query: str) -> str:
@@ -231,51 +235,13 @@ def Retreave_from_email(query: str, save_attachments: bool = True) -> str:
 @tool
 def Retreave_from_google_drive(query: str) -> str:
         """Search for files in Google Drive based on query. Returns the names and ids of matching files."""
-        SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-        import os.path
-        from google.auth.transport.requests import Request
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        from googleapiclient.discovery import build
         from googleapiclient.errors import HttpError
-        from google.auth.exceptions import RefreshError
-        creds = None
-        # Construct absolute paths to storage/json_configs correctly
-        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        token_path = os.path.join(root_dir, "storage", "json_configs", "token.json")
-        creds_path = os.path.join(root_dir, "storage", "json_configs", "credentials.json")
-        json_configs_dir = os.path.join(root_dir, "storage", "json_configs")
-
-        # The file token.json stores the user's access and refresh tokens, and is
-        # created automatically when the authorization flow completes for the first
-        # time.
-        if os.path.exists(token_path):
-            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-        # If there are no (valid) credentials available, let the user log in.
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except RefreshError:
-                    # Token has been revoked or expired, delete it and re-authenticate
-                    os.remove(token_path)
-                    creds = None
-            
-            if not creds:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    creds_path, SCOPES
-                )
-                creds = flow.run_local_server(port=0)
-                # Save the credentials for the next run
-                os.makedirs(json_configs_dir, exist_ok=True)
-                with open(token_path, "w") as token:
-                    token.write(creds.to_json())
 
         try:
             import io
             from googleapiclient.http import MediaIoBaseDownload
-            
-            service = build("drive", "v3", credentials=creds)
+
+            service = _get_drive_service()
 
             # Search with priority: exact phrase first, then individual words
             words = query.split()
@@ -388,5 +354,205 @@ def Retreave_from_whatsapp(query: str) -> str:
     """Retreave information about the company transaction and invoices from whatsapp messages based on the query. the query can be the name of the company or the invoice number or the transaction details or the date or the sender or the receiver."""
     #Comming soon, I am currently working on a solution to retreave information from whatsapp messages based on the query. I will update this function as soon as I have a working solution. The main idea is to use the whatsapp web interface to search for messages containing the query and then extract the relevant information from those messages. I will also try to extract any attachments related to those messages and process them using the scan_documents function.
     return "This feature is coming soon. I am currently working on a solution to retreave information from whatsapp"
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  SEARCH / SELECTIVE-IMPORT HELPERS
+#
+#  These are used by the dedicated REST endpoints so the user can pick
+#  exactly which files get added to the system instead of every match
+#  being downloaded/saved automatically. The LLM tools above are left
+#  untouched so the chat agent keeps its existing behaviour.
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _get_drive_service():
+    """Authenticate to Google Drive and return an authorized service client."""
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from google.auth.exceptions import RefreshError
+
+    SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+    json_configs_dir = os.path.join(_STORAGE_ROOT, "storage", "json_configs")
+    token_path = os.path.join(json_configs_dir, "token.json")
+    creds_path = os.path.join(json_configs_dir, "credentials.json")
+
+    creds = None
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                os.remove(token_path)
+                creds = None
+        if not creds:
+            flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
+            creds = flow.run_local_server(port=0)
+            os.makedirs(json_configs_dir, exist_ok=True)
+            with open(token_path, "w") as token:
+                token.write(creds.to_json())
+    return build("drive", "v3", credentials=creds)
+
+
+def search_google_drive(query: str) -> list[dict]:
+    """Return metadata for files matching the query WITHOUT downloading anything."""
+    service = _get_drive_service()
+    words = query.split()
+    all_items: list[dict] = []
+    seen_ids: set = set()
+
+    if len(words) > 1:
+        exact_results = (
+            service.files()
+            .list(q=f"fullText contains '{query}'", pageSize=10,
+                  fields="nextPageToken, files(id, name, mimeType, createdTime, modifiedTime)")
+            .execute()
+        )
+        for item in exact_results.get("files", []):
+            all_items.append(item)
+            seen_ids.add(item["id"])
+
+        word_queries = " or ".join([f"fullText contains '{word}'" for word in words])
+        word_results = (
+            service.files()
+            .list(q=word_queries, pageSize=20,
+                  fields="nextPageToken, files(id, name, mimeType, createdTime, modifiedTime)")
+            .execute()
+        )
+        for item in word_results.get("files", []):
+            if item["id"] not in seen_ids:
+                all_items.append(item)
+                seen_ids.add(item["id"])
+    else:
+        results = (
+            service.files()
+            .list(q=f"fullText contains '{query}'", pageSize=20,
+                  fields="nextPageToken, files(id, name, mimeType, createdTime, modifiedTime)")
+            .execute()
+        )
+        all_items = results.get("files", [])
+
+    return all_items
+
+
+def download_google_drive_files(query: str, file_ids: list[str]) -> list[str]:
+    """Download/export only the selected Google Drive files and return their paths."""
+    import io
+    from googleapiclient.http import MediaIoBaseDownload
+
+    service = _get_drive_service()
+    google_mime_types = {
+        'application/vnd.google-apps.document': ('application/pdf', '.pdf'),
+        'application/vnd.google-apps.spreadsheet': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'),
+        'application/vnd.google-apps.presentation': ('application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'),
+        'application/vnd.google-apps.drawing': ('application/pdf', '.pdf'),
+    }
+
+    download_dir = os.path.join(_STORAGE_ROOT, "storage", "Google_Drive_Retrete", query)
+    os.makedirs(download_dir, exist_ok=True)
+
+    saved_paths: list[str] = []
+    for file_id in file_ids:
+        meta = service.files().get(fileId=file_id, fields="name, mimeType").execute()
+        file_name = meta.get("name", file_id)
+        mime_type = meta.get("mimeType", "unknown")
+        try:
+            if mime_type in google_mime_types:
+                export_mime, extension = google_mime_types[mime_type]
+                if not any(file_name.endswith(ext) for ext in ['.pdf', '.xlsx', '.pptx', '.docx']):
+                    file_name_with_ext = file_name + extension
+                else:
+                    file_name_with_ext = file_name
+                request = service.files().export_media(fileId=file_id, mimeType=export_mime)
+                file_path = os.path.join(download_dir, file_name_with_ext)
+            else:
+                request = service.files().get_media(fileId=file_id)
+                file_path = os.path.join(download_dir, file_name)
+
+            with io.FileIO(file_path, 'wb') as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    _status, done = downloader.next_chunk()
+            saved_paths.append(file_path)
+        except Exception as e:
+            print(f"Download failed for '{file_name}' ({file_id}): {e}")
+    return saved_paths
+
+
+def search_email(query: str) -> list[dict]:
+    """Return metadata for email attachments matching the query WITHOUT saving them."""
+    from imap_tools import MailBox
+    from imap_tools.query import OR
+    from src.utils.config import get_email_address, get_email_app_password
+
+    EMAIL = get_email_address()
+    PASSWORD = get_email_app_password()
+    if not EMAIL or not PASSWORD:
+        return []
+
+    results: list[dict] = []
+    with MailBox("imap.gmail.com").login(EMAIL, PASSWORD) as mailbox:
+        criteria = OR(subject=query, text=query, from_=query, to=query)
+        messages = mailbox.fetch(criteria=criteria, limit=100, reverse=True)
+        for msg in messages:
+            for idx, att in enumerate(msg.attachments):
+                results.append({
+                    "uid": str(msg.uid),
+                    "email_subject": msg.subject or "",
+                    "email_from": msg.from_ or "",
+                    "email_date": str(msg.date) if msg.date else "",
+                    "index": idx,
+                    "filename": att.filename or f"attachment_{att.size}.bin",
+                    "content_type": att.content_type or "",
+                    "size": att.size or 0,
+                })
+    return results
+
+
+def save_email_attachments(query: str, selection: list[dict]) -> list[str]:
+    """Save only the selected email attachments and return their file paths.
+
+    Each entry in *selection* is a dict with ``uid`` (str) and ``index`` (int)
+    that identify an attachment previously returned by :func:`search_email`.
+    """
+    from imap_tools import MailBox
+    from imap_tools.query import AND
+    from src.utils.config import get_email_address, get_email_app_password
+
+    EMAIL = get_email_address()
+    PASSWORD = get_email_app_password()
+    if not EMAIL or not PASSWORD:
+        return []
+
+    saved_paths: list[str] = []
+    with MailBox("imap.gmail.com").login(EMAIL, PASSWORD) as mailbox:
+        for sel in selection:
+            uid = str(sel.get("uid", ""))
+            index = int(sel.get("index", 0))
+            if not uid:
+                continue
+            try:
+                messages = mailbox.fetch(criteria=AND(uid=uid), limit=1)
+                for msg in messages:
+                    if index >= len(msg.attachments):
+                        continue
+                    att = msg.attachments[index]
+                    attachments_dir = os.path.join(
+                        _STORAGE_ROOT, "storage", "email_attachments", str(msg.from_)
+                    )
+                    os.makedirs(attachments_dir, exist_ok=True)
+                    filename = att.filename or f"attachment_{att.size}.bin"
+                    file_path = os.path.join(attachments_dir, filename)
+                    with open(file_path, 'wb') as f:
+                        f.write(att.payload)
+                    saved_paths.append(file_path)
+            except Exception as e:
+                print(f"Could not save attachment (uid={uid}, index={index}): {e}")
+    return saved_paths
 
 

@@ -21,6 +21,7 @@ import SupplierRequests from "@/pages/SupplierRequests";
 import PlaceOrder from "@/pages/PlaceOrder";
 
 import SupplierPortal from "@/pages/SupplierPortal";
+import { LanguageProvider } from "@/lib/language";
 
 const queryClient = new QueryClient();
 
@@ -51,7 +52,8 @@ const HomeRedirect = () => {
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <LanguageProvider>
+    <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -96,7 +98,8 @@ const App = () => (
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
-  </QueryClientProvider>
+    </QueryClientProvider>
+  </LanguageProvider>
 );
 
 export default App;

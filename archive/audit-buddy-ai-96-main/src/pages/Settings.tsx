@@ -11,11 +11,13 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSessionStore } from "@/stores/sessionStore";
 import { exitConversation, createSession } from "@/services/api";
+import { useLanguage } from "@/lib/language";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { sessionId, setSessionId } = useSessionStore();
+  const { language, setLanguage } = useLanguage();
 
   const { data: config, isLoading } = useQuery({
     queryKey: ["config"],
@@ -113,6 +115,26 @@ export default function SettingsPage() {
         <h2 className="text-2xl font-semibold">Settings</h2>
         <p className="text-muted-foreground text-sm">Configure the audit agent</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Language</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">App language</Label>
+            <Select value={language} onValueChange={setLanguage}>
+              <SelectTrigger className="w-40 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="fr">French</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -223,7 +245,7 @@ export default function SettingsPage() {
                   className="h-9 text-sm"
                 />
               </div>
-              {/* <div className="space-y-2">
+              <div className="space-y-2">
                 <Label className="text-sm">Email App Password</Label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -242,7 +264,10 @@ export default function SettingsPage() {
                     {showEmailPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
-              </div> */}
+                <p className="text-xs text-muted-foreground">
+                  For Gmail, open Google Account &gt; Security &gt; 2-Step Verification &gt; App passwords, then create a password for this application.
+                </p>
+              </div>
             </>
           )}
         </CardContent>
