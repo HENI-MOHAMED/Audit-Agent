@@ -27,6 +27,7 @@ export default function ChatPage() {
   
   const bottomRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef<boolean>(false);
+  const agentIdMapRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,6 +44,8 @@ export default function ChatPage() {
     
     setActiveTools([]);
     setActiveAgents([]);
+    // Clear agent ID map for new conversation
+    agentIdMapRef.current = {};
 
     createChatWebSocket(
       userMsg,
@@ -76,17 +79,22 @@ export default function ChatPage() {
           });
         }
         else if (event.type === "agent_start") {
+          const agentId = Math.random().toString();
           setActiveAgents(prev => [...prev, {
-            id: Math.random().toString(),
+            id: agentId,
             name: event.agent,
             status: "running",
             tools: []
           }]);
+          // Store the mapping so agent_done can find it by ID
+          agentIdMapRef.current[event.agent] = agentId;
         }
         else if (event.type === "agent_tool_call") {
           setActiveAgents(prev => {
             const newAgents = [...prev];
-            const aIdx = newAgents.map(a => a.name).lastIndexOf(event.agent);
+            // Find by the most recent agent with this name (using our map)
+            const agentId = agentIdMapRef.current[event.agent];
+            const aIdx = agentId ? newAgents.findIndex(a => a.id === agentId) : newAgents.map(a => a.name).lastIndexOf(event.agent);
             if (aIdx >= 0) {
               newAgents[aIdx].tools.push({
                 name: event.name,
@@ -100,7 +108,8 @@ export default function ChatPage() {
         else if (event.type === "agent_tool_result") {
           setActiveAgents(prev => {
             const newAgents = [...prev];
-            const aIdx = newAgents.map(a => a.name).lastIndexOf(event.agent);
+            const agentId = agentIdMapRef.current[event.agent];
+            const aIdx = agentId ? newAgents.findIndex(a => a.id === agentId) : newAgents.map(a => a.name).lastIndexOf(event.agent);
             if (aIdx >= 0) {
                const agent = newAgents[aIdx];
                const tIdx = agent.tools.map(t => t.name).lastIndexOf(event.name);
@@ -115,10 +124,16 @@ export default function ChatPage() {
         else if (event.type === "agent_done") {
           setActiveAgents(prev => {
             const newAgents = [...prev];
-            const aIdx = newAgents.map(a => a.name).lastIndexOf(event.agent);
+            // Use the stored ID to find the exact agent instance
+            const agentId = agentIdMapRef.current[event.agent];
+            const aIdx = agentId ? newAgents.findIndex(a => a.id === agentId) : newAgents.map(a => a.name).lastIndexOf(event.agent);
             if (aIdx >= 0) {
                newAgents[aIdx].status = "done";
                newAgents[aIdx].summary = event.summary;
+            }
+            // Clean up the map
+            if (agentIdMapRef.current[event.agent]) {
+              delete agentIdMapRef.current[event.agent];
             }
             return newAgents;
           });

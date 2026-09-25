@@ -844,6 +844,8 @@ async def chat_websocket(ws: WebSocket):
                 traceback.print_exc()
                 await queue.put({"type": "error", "message": f"Graph Error: {str(e)}"})
             finally:
+                # Flush pending emitter events before sending 'done'
+                await emitter.flush()
                 await queue.put({"type": "done"})
 
         graph_task = asyncio.create_task(run_graph())
