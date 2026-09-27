@@ -26,9 +26,17 @@ export function useDashboard(): { data: DashboardData | undefined; isLoading: bo
   const [predictionsLoading, setPredictionsLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/dashboard/predictions")
-      .then((res) => res.json())
+    if (dashboardPredictionsLoaded) {
+      setPredictions(dashboardPredictions);
+      setPredictionsLoading(false);
+      return;
+    }
+
+    dashboardPredictionsRequest ??= fetch("/api/dashboard/predictions").then((res) => res.json());
+    dashboardPredictionsRequest
       .then((data) => {
+        dashboardPredictions = data;
+        dashboardPredictionsLoaded = true;
         setPredictions(data);
         setPredictionsLoading(false);
       })
@@ -41,6 +49,9 @@ export function useDashboard(): { data: DashboardData | undefined; isLoading: bo
           predicted_findings_by_risk: []
         });
         setPredictionsLoading(false);
+      })
+      .finally(() => {
+        dashboardPredictionsRequest = null;
       });
   }, []);
 
@@ -163,16 +174,28 @@ export function useDocuments() {
 
 import { getFullReport, type FullReportData } from "@/services/api";
 
+let dashboardPredictions: any = null;
+let dashboardPredictionsLoaded = false;
+let dashboardPredictionsRequest: Promise<any> | null = null;
+let fullReport: FullReportData | undefined;
+let fullReportLoaded = false;
+let fullReportRequest: Promise<FullReportData> | null = null;
+
 export function useFullReport(): { data: FullReportData | undefined; isLoading: boolean; error: string | null } {
-  const [data, setData] = useState<FullReportData | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<FullReportData | undefined>(fullReport);
+  const [isLoading, setIsLoading] = useState(!fullReportLoaded);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (fullReportLoaded) return;
+
     setIsLoading(true);
     setError(null);
-    getFullReport()
+    fullReportRequest ??= getFullReport();
+    fullReportRequest
       .then((res) => {
+        fullReport = res;
+        fullReportLoaded = true;
         setData(res);
         setIsLoading(false);
       })
@@ -180,6 +203,9 @@ export function useFullReport(): { data: FullReportData | undefined; isLoading: 
         console.error("Failed to fetch full report", err);
         setError(err.message || "Failed to load report");
         setIsLoading(false);
+      })
+      .finally(() => {
+        fullReportRequest = null;
       });
   }, []);
 

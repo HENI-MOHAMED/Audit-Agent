@@ -8,6 +8,8 @@ let sharedWs: WebSocket | null = null;
 let refCount = 0;
 let pendingCallbacks: Map<number, (msg: WSMessage) => void> = new Map();
 let msgId = 0;
+const queryCache = new Map<string, { data: unknown[]; count: number }>();
+const pendingQueries = new Map<string, Promise<WSMessage>>();
 
 function getWs(): WebSocket {
   if (sharedWs && sharedWs.readyState <= WebSocket.OPEN) return sharedWs;
@@ -119,24 +121,48 @@ export function useDbSchema(table: string) {
 }
 
 export function useDbQuery<T = Record<string, unknown>>(sql: string, enabled = true) {
-  const [data, setData] = useState<T[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = queryCache.get(sql);
+  const [data, setData] = useState<T[]>(() => (cached?.data as T[]) ?? []);
+  const [loading, setLoading] = useState(() => enabled && !cached);
   const [error, setError] = useState<string | null>(null);
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState(() => cached?.count ?? 0);
 
-  const execute = useCallback(async () => {
+  const execute = useCallback(async (force = false) => {
     if (!sql || !enabled) return;
+
+    if (!force) {
+      const cached = queryCache.get(sql);
+      if (cached) {
+        setData(cached.data as T[]);
+        setCount(cached.count);
+        setLoading(false);
+        return;
+      }
+    } else {
+      queryCache.delete(sql);
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const res = await sendMessage({ action: "query", sql });
+      let request = pendingQueries.get(sql);
+      if (!request) {
+        request = sendMessage({ action: "query", sql });
+        pendingQueries.set(sql, request);
+      }
+      const res = await request;
+      pendingQueries.delete(sql);
       if (res.ok) {
-        setData(res.data as T[]);
-        setCount(res.count ?? (res.data as T[]).length);
+        const nextData = res.data as T[];
+        const nextCount = res.count ?? nextData.length;
+        queryCache.set(sql, { data: nextData, count: nextCount });
+        setData(nextData);
+        setCount(nextCount);
       } else {
         setError((res as WSMessageErr).error);
       }
     } catch (e: any) {
+      pendingQueries.delete(sql);
       setError(e.message);
     } finally {
       setLoading(false);
@@ -149,5 +175,5 @@ export function useDbQuery<T = Record<string, unknown>>(sql: string, enabled = t
     return () => { refCount--; };
   }, [execute]);
 
-  return { data, loading, error, count, refetch: execute };
+  return { data, loading, error, count, refetch: () => execute(true) };
 }
