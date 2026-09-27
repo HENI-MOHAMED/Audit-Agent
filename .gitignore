@@ -11,4 +11,5 @@ data/*
 archive/PDF_lib
 node_modules
 firebase_service_account.json
+storage/json_configs/app_config.json
 tests
